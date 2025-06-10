@@ -188,3 +188,6 @@
 {"level":"info","message":"Server running on port 3000","timestamp":"2025-06-10T11:34:42.870Z"}
 {"level":"info","message":"Server running on port 3000","timestamp":"2025-06-10T11:35:23.776Z"}
 {"level":"info","message":"::ffff:192.168.1.103 - - [10/Jun/2025:11:40:39 +0000] \"GET /api/news/latest?page=1&limit=10 HTTP/1.1\" 200 6869 \"-\" \"okhttp/3.14.9\"","timestamp":"2025-06-10T11:40:39.877Z"}
+{"level":"info","message":"::1 - - [10/Jun/2025:14:15:19 +0000] \"GET /api/news/latest HTTP/1.1\" 200 6617 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 Edg/137.0.0.0\"","timestamp":"2025-06-10T14:15:19.839Z"}
+{"level":"info","message":"::1 - - [10/Jun/2025:14:15:19 +0000] \"GET /favicon.ico HTTP/1.1\" 404 150 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 Edg/137.0.0.0\"","timestamp":"2025-06-10T14:15:19.944Z"}
+{"level":"info","message":"::1 - - [10/Jun/2025:14:15:48 +0000] \"GET /api/news/latest HTTP/1.1\" 200 6617 \"-\" \"PostmanRuntime/7.44.0\"","timestamp":"2025-06-10T14:15:48.039Z"}
