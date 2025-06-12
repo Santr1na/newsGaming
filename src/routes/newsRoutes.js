@@ -1,11 +1,10 @@
 const express = require('express');
 const { query } = require('express-validator');
 const newsController = require('../controllers/newsController');
-const validate = require('../middleware/validate'); // Add this
+const validate = require('../middleware/validate');
 
 const router = express.Router();
 
-// Debug: Log controller to verify
 console.log('newsController:', newsController);
 
 if (!newsController.getLatestNews) {
@@ -116,40 +115,4 @@ router.get('/latest', newsController.getLatestNews);
 
 /**
  * @swagger
- * /api/news/search:
- *   get:
- *     tags: [News]
- *     summary: Поиск игровых новостей
- *     description: Поиск новостей по строке запроса
- *     parameters:
- *       - in: query
- *         name: q
- *         required: true
- *         schema:
- *           type: string
- *         description: Строка поискового запроса
- *     responses:
- *       200:
- *         description: Результаты поиска
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/NewsItem'
- *       400:
- *         description: Неверный поисковый запрос
- *       500:
- *         description: Ошибка сервера
- */
-router.get('/search', [
-  query('q').notEmpty().trim().escape(),
-  validate
-], newsController.searchNews);
-
-module.exports = router;
+ * /api/news/search
