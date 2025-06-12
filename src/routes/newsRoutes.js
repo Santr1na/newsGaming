@@ -14,24 +14,28 @@ const router = express.Router();
  *       properties:
  *         title:
  *           type: string
- *           description: The title of the news article
+ *           description: Заголовок новости
  *         description:
  *           type: string
- *           description: A brief description or excerpt of the article
+ *           description: Краткое описание или отрывок статьи
  *         link:
  *           type: string
- *           description: URL to the full article
+ *           description: URL полной статьи
  *         pubDate:
  *           type: string
  *           format: date-time
- *           description: Publication date
+ *           description: Дата публикации
  *         image:
  *           type: string
- *           description: URL to the article's image
+ *           description: URL изображения статьи
  *         author:
  *           type: string
- *           description: The author of the news article
- *	     nullable: true
+ *           description: Автор новости
+ *           nullable: true
+ *         category:
+ *           type: string
+ *           enum: [rumors, recommendations, polls, soon, update]
+ *           description: Категория новости
  *   responses:
  *     PaginatedResponse:
  *       type: object
@@ -58,30 +62,48 @@ const router = express.Router();
  * /api/news/latest:
  *   get:
  *     tags: [News]
- *     summary: Get latest game announcements
- *     description: Retrieves the latest gaming news articles with pagination
+ *     summary: Получить последние игровые новости
+ *     description: Возвращает игровые новости с пагинацией и фильтрацией по категории и дате
  *     parameters:
  *       - in: query
  *         name: page
  *         schema:
  *           type: integer
  *           default: 1
- *         description: Page number for pagination
+ *         description: Номер страницы для пагинации
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 10
- *         description: Number of items per page
+ *         description: Количество элементов на странице
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *           enum: [rumors, recommendations, polls, soon, update]
+ *         description: Категория новостей
+ *       - in: query
+ *         name: from
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Начальная дата (ISO, например, 2024-01-01T00:00:00Z)
+ *       - in: query
+ *         name: to
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Конечная дата (ISO, например, 2025-06-12T23:59:59Z)
  *     responses:
  *       200:
- *         description: Successful response with news articles
+ *         description: Успешный ответ с новостями
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/responses/PaginatedResponse'
  *       500:
- *         description: Server error
+ *         description: Ошибка сервера
  */
 router.get('/latest', newsController.getLatestNews);
 
@@ -90,18 +112,18 @@ router.get('/latest', newsController.getLatestNews);
  * /api/news/search:
  *   get:
  *     tags: [News]
- *     summary: Search game news
- *     description: Search through gaming news articles using a query string
+ *     summary: Поиск игровых новостей
+ *     description: Поиск новостей по строке запроса
  *     parameters:
  *       - in: query
  *         name: q
  *         required: true
  *         schema:
  *           type: string
- *         description: Search query string
+ *         description: Строка поискового запроса
  *     responses:
  *       200:
- *         description: Successful search results
+ *         description: Результаты поиска
  *         content:
  *           application/json:
  *             schema:
@@ -114,9 +136,9 @@ router.get('/latest', newsController.getLatestNews);
  *                   items:
  *                     $ref: '#/components/schemas/NewsItem'
  *       400:
- *         description: Invalid search query
+ *         description: Неверный поисковый запрос
  *       500:
- *         description: Server error
+ *         description: Ошибка сервера
  */
 router.get('/search', [
   query('q').notEmpty().trim().escape(),

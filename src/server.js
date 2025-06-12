@@ -15,8 +15,14 @@ const express = require('express');
 const mongoose = require('mongoose');
 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB подключен'))
-  .catch(err => console.error('Ошибка подключения MongoDB:', err));
+  .then(() => logger.info('MongoDB connected'))
+  .catch(err => {
+    logger.error('MongoDB connection error:', {
+      message: err.message,
+      stack: err.stack
+    });
+    process.exit(1); // Exit on failure
+  });
 
    // Security middleware
    app.use(helmet());

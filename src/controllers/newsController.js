@@ -13,24 +13,24 @@ const parser = new RSSParser({
     ]
   }
 });
-const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 300000; // 5 минут
+const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 300000; // 5 minutes
 
 class NewsController {
-  // Функция для категоризации новостей
   categorizeNews(item) {
-    const titleLower = item.title.toLowerCase();
-    if (titleLower.includes('rumor') || titleLower.includes('слух')) return 'rumors';
-    if (titleLower.includes('announc') || titleLower.includes('анонс')) return 'soon';
-    if (titleLower.includes('poll') || titleLower.includes('опрос')) return 'polls';
-    if (titleLower.includes('recommend') || titleLower.includes('рекоменд')) return 'recommendations';
-    return 'update'; // Категория по умолчанию
+    const titleLower = item.title?.toLowerCase() || '';
+    const contentLower = item.contentSnippet?.toLowerCase() || '';
+    if (titleLower.includes('rumor') || titleLower.includes('слух') || contentLower.includes('rumor')) return 'rumors';
+    if (titleLower.includes('announc') || titleLower.includes('анонс') || contentLower.includes('announc')) return 'soon';
+    if (titleLower.includes('poll') || titleLower.includes('опрос') || contentLower.includes('poll')) return 'polls';
+    if (titleLower.includes('recommend') || titleLower.includes('рекоменд') || contentLower.includes('recommend')) return 'recommendations';
+    return 'update';
   }
 
   getLatestNews = async (req, res, next) => {
     try {
       const { page = 1, limit = 10, category, from, to } = req.query;
 
-      // Формируем запрос для базы данных
+      // Build MongoDB query
       const query = {};
       if (category) query.category = category;
       if (from && to) {
@@ -41,14 +41,15 @@ class NewsController {
         query.pubDate = { $lte: new Date(to) };
       }
 
-      // Проверяем кэш
+      // Check cache
       const cacheKey = `news_${page}_${limit}_${category || 'all'}_${from || 'no-from'}_${to || 'no-to'}`;
       const cachedNews = cache.get(cacheKey);
       if (cachedNews) {
+        logger.info(`Cache hit for key: ${cacheKey}`);
         return res.json(cachedNews);
       }
 
-      // Проверяем базу данных
+      // Query database
       const newsFromDB = await News.find(query)
         .sort({ pubDate: -1 })
         .skip((page - 1) * limit)
@@ -56,7 +57,7 @@ class NewsController {
         .exec();
       const total = await News.countDocuments(query);
 
-      // Если в базе данных достаточно новостей, возвращаем их
+      // Return if sufficient data
       if (newsFromDB.length >= limit || (page - 1) * limit + newsFromDB.length >= total) {
         const response = {
           success: true,
@@ -68,35 +69,66 @@ class NewsController {
           }
         };
         cache.put(cacheKey, response, CACHE_DURATION);
+        logger.info(`Returning ${newsFromDB.length} news from DB`);
         return res.json(response);
       }
 
-      // Если данных недостаточно, обновляем из RSS
-      const feed = await parser.parseURL(process.env.IGN_NEWS_FEED_URL);
-      const newsItems = feed.items.map(item => ({
-        title: item.title,
-        description: item.contentSnippet,
-        link: item.link,
-        pubDate: new Date(item.pubDate),
-        image:
-          item.enclosure?.url ||
-          (item.mediaContent ? (Array.isArray(item.mediaContent) ? item.mediaContent[0]?.$?.url : item.mediaContent.$?.url) : null) ||
-          (item.mediaThumbnail ? (Array.isArray(item.mediaThumbnail) ? item.mediaThumbnail[0]?.$?.url : item.mediaThumbnail.$?.url) : null) ||
-          'https://via.placeholder.com/150',
-        author: item.creator || item.author || 'IGN',
-        category: this.categorizeNews(item)
-      }));
+      // Fetch from RSS feeds
+      const feedUrls = [
+        process.env.IGN_NEWS_FEED_URL,
+        process.env.IGN_REVIEWS_FEED_URL,
+        process.env.GAMESPOT_NEWS_FEED_URL,
+        process.env.GAMESPOT_REVIEWS_FEED_URL,
+        process.env.POLYGON_FEED_URL,
+        process.env.KOTAKU_FEED_URL,
+        process.env.EUROGAMER_FEED_URL,
+        process.env.PCGAMER_FEED_URL
+      ].filter(url => url);
 
-      // Сохраняем новости в базу данных
-      for (const item of newsItems) {
-        await News.updateOne(
-          { link: item.link }, // Уникальный ключ для избежания дубликатов
-          { $set: item },
-          { upsert: true }
-        );
+      const newsItems = [];
+      for (const url of feedUrls) {
+        try {
+          const feed = await parser.parseURL(url);
+          if (!feed?.items) {
+            logger.warn(`Empty feed: ${url}`);
+            continue;
+          }
+          const items = feed.items
+            .filter(item => item.title && item.link && item.pubDate) // Validate required fields
+            .map(item => ({
+              title: item.title,
+              description: item.contentSnippet || item.content || '',
+              link: item.link,
+              pubDate: new Date(item.pubDate || item.isoDate),
+              image:
+                item.enclosure?.url ||
+                (item.mediaContent ? (Array.isArray(item.mediaContent) ? item.mediaContent[0]?.$?.url : item.mediaContent.$?.url) : null) ||
+                (item.mediaThumbnail ? (Array.isArray(item.mediaThumbnail) ? item.mediaThumbnail[0]?.$?.url : item.mediaThumbnail.$?.url) : null) ||
+                'https://via.placeholder.com/150',
+              author: item.creator || item.author || 'Unknown',
+              category: this.categorizeNews(item)
+            }));
+          newsItems.push(...items);
+          logger.info(`Fetched ${items.length} items from ${url}`);
+        } catch (error) {
+          logger.warn(`Failed to parse RSS feed ${url}: ${error.message}`);
+        }
       }
 
-      // Повторный запрос из базы данных
+      // Save to database
+      for (const item of newsItems) {
+        try {
+          await News.updateOne(
+            { link: item.link },
+            { $set: item },
+            { upsert: true }
+          );
+        } catch (error) {
+          logger.error(`Failed to save news item ${item.link}: ${error.message}`);
+        }
+      }
+
+      // Re-query database
       const updatedNews = await News.find(query)
         .sort({ pubDate: -1 })
         .skip((page - 1) * limit)
@@ -114,27 +146,17 @@ class NewsController {
         }
       };
       cache.put(cacheKey, response, CACHE_DURATION);
+      logger.info(`Returning ${updatedNews.length} news after RSS fetch`);
       res.json(response);
     } catch (error) {
-      logger.error('Ошибка получения новостей:', error);
+      logger.error('Error fetching news:', {
+        message: error.message,
+        stack: error.stack,
+        query: req.query
+      });
       next(new ApiError('Не удалось получить новости', 500));
     }
   };
-
-  paginateResults(res, data, page, limit) {
-    const startIndex = (page - 1) * limit;
-    const endIndex = page * limit;
-    const results = data.slice(startIndex, endIndex);
-    res.json({
-      success: true,
-      data: results,
-      pagination: {
-        current: page,
-        total: Math.ceil(data.length / limit),
-        hasMore: endIndex < data.length
-      }
-    });
-  }
 
   searchNews = async (req, res, next) => {
     try {
@@ -151,36 +173,70 @@ class NewsController {
         data: news
       });
     } catch (error) {
-      logger.error('Ошибка поиска новостей:', error);
+      logger.error('Error searching news:', {
+        message: error.message,
+        stack: error.stack,
+        query: req.query
+      });
       next(new ApiError('Не удалось выполнить поиск новостей', 500));
     }
   };
 
   async fetchNews() {
-    const feed = await parser.parseURL(process.env.IGN_NEWS_FEED_URL);
-    const news = feed.items.map(item => ({
-      title: item.title,
-      description: item.contentSnippet,
-      link: item.link,
-      pubDate: new Date(item.pubDate),
-      image:
-        item.enclosure?.url ||
-        (item.mediaContent ? (Array.isArray(item.mediaContent) ? item.mediaContent[0]?.$?.url : item.mediaContent.$?.url) : null) ||
-        (item.mediaThumbnail ? (Array.isArray(item.mediaThumbnail) ? item.mediaThumbnail[0]?.$?.url : item.mediaThumbnail.$?.url) : null) ||
-        'https://via.placeholder.com/150',
-      author: item.creator || item.author || 'IGN',
-      category: this.categorizeNews(item)
-    }));
+    const feedUrls = [
+      process.env.IGN_NEWS_FEED_URL,
+      process.env.IGN_REVIEWS_FEED_URL,
+      process.env.GAMESPOT_NEWS_FEED_URL,
+      process.env.GAMESPOT_REVIEWS_FEED_URL,
+      process.env.POLYGON_FEED_URL,
+      process.env.KOTAKU_FEED_URL,
+      process.env.EUROGAMER_FEED_URL,
+      process.env.PCGAMER_FEED_URL
+    ].filter(url => url);
 
-    // Сохраняем новости в базу данных
-    for (const item of news) {
-      await News.updateOne(
-        { link: item.link },
-        { $set: item },
-        { upsert: true }
-      );
+    const newsItems = [];
+    for (const url of feedUrls) {
+      try {
+        const feed = await parser.parseURL(url);
+        if (!feed?.items) {
+          logger.warn(`Empty feed: ${url}`);
+          continue;
+        }
+        const items = feed.items
+          .filter(item => item.title && item.link && item.pubDate)
+          .map(item => ({
+            title: item.title,
+            description: item.contentSnippet || item.content || '',
+            link: item.link,
+            pubDate: new Date(item.pubDate || item.isoDate),
+            image:
+              item.enclosure?.url ||
+              (item.mediaContent ? (Array.isArray(item.mediaContent) ? item.mediaContent[0]?.$?.url : item.mediaContent.$?.url) : null) ||
+              (item.mediaThumbnail ? (Array.isArray(item.mediaThumbnail) ? item.mediaThumbnail[0]?.$?.url : item.mediaThumbnail.$?.url) : null) ||
+              'https://via.placeholder.com/150',
+            author: item.creator || item.author || 'Unknown',
+            category: this.categorizeNews(item)
+          }));
+        newsItems.push(...items);
+        logger.info(`Fetched ${items.length} items from ${url}`);
+      } catch (error) {
+        logger.warn(`Failed to parse RSS feed ${url}: ${error.message}`);
+      }
     }
-    return news;
+
+    for (const item of newsItems) {
+      try {
+        await News.updateOne(
+          { link: item.link },
+          { $set: item },
+          { upsert: true }
+        );
+      } catch (error) {
+        logger.error(`Failed to save news item ${item.link}: ${error.message}`);
+      }
+    }
+    logger.info(`Saved ${newsItems.length} news items`);
+    return newsItems;
   }
 }
 
