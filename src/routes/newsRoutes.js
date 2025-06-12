@@ -1,9 +1,16 @@
 const express = require('express');
 const { query } = require('express-validator');
 const newsController = require('../controllers/newsController');
-const validate = require('../middleware/validate');
+const validate = require('../middleware/validate'); // Add this
 
 const router = express.Router();
+
+// Debug: Log controller to verify
+console.log('newsController:', newsController);
+
+if (!newsController.getLatestNews) {
+  throw new Error('newsController.getLatestNews is undefined');
+}
 
 /**
  * @swagger

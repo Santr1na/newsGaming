@@ -6,19 +6,15 @@ const News = require('../models/news');
 
 const parser = new RSSParser({
   customFields: {
-    item: [
-      ['media:content', 'mediaContent'],
-      ['media:thumbnail', 'mediaThumbnail'],
-      ['dc:creator', 'creator']
-    ]
+    item: [['media:content', 'mediaContent'], ['media:thumbnail', 'mediaThumbnail'], ['dc:creator', 'creator']]
   }
 });
-const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 300000; // 5 minutes
+const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 300000;
 
 class NewsController {
   categorizeNews(item) {
-    const titleLower = item.title?.toLowerCase() || '';
-    const contentLower = item.contentSnippet?.toLowerCase() || '';
+    const titleLower = (item.title || '').toLowerCase();
+    const contentLower = (item.contentSnippet || '').toLowerCase();
     if (titleLower.includes('rumor') || titleLower.includes('слух') || contentLower.includes('rumor')) return 'rumors';
     if (titleLower.includes('announc') || titleLower.includes('анонс') || contentLower.includes('announc')) return 'soon';
     if (titleLower.includes('poll') || titleLower.includes('опрос') || contentLower.includes('poll')) return 'polls';
@@ -29,8 +25,6 @@ class NewsController {
   getLatestNews = async (req, res, next) => {
     try {
       const { page = 1, limit = 10, category, from, to } = req.query;
-
-      // Build MongoDB query
       const query = {};
       if (category) query.category = category;
       if (from && to) {
@@ -41,15 +35,13 @@ class NewsController {
         query.pubDate = { $lte: new Date(to) };
       }
 
-      // Check cache
       const cacheKey = `news_${page}_${limit}_${category || 'all'}_${from || 'no-from'}_${to || 'no-to'}`;
       const cachedNews = cache.get(cacheKey);
       if (cachedNews) {
-        logger.info(`Cache hit for key: ${cacheKey}`);
+        logger.info(`Cache hit: ${cacheKey}`);
         return res.json(cachedNews);
       }
 
-      // Query database
       const newsFromDB = await News.find(query)
         .sort({ pubDate: -1 })
         .skip((page - 1) * limit)
@@ -57,23 +49,13 @@ class NewsController {
         .exec();
       const total = await News.countDocuments(query);
 
-      // Return if sufficient data
       if (newsFromDB.length >= limit || (page - 1) * limit + newsFromDB.length >= total) {
-        const response = {
-          success: true,
-          data: newsFromDB,
-          pagination: {
-            current: parseInt(page),
-            total,
-            hasMore: page * limit < total
-          }
-        };
+        const response = { success: true, data: newsFromDB, pagination: { current: parseInt(page), total, hasMore: page * limit < total } };
         cache.put(cacheKey, response, CACHE_DURATION);
-        logger.info(`Returning ${newsFromDB.length} news from DB`);
+        logger.info(`DB hit: ${newsFromDB.length} items`);
         return res.json(response);
       }
 
-      // Fetch from RSS feeds
       const feedUrls = [
         process.env.IGN_NEWS_FEED_URL,
         process.env.IGN_REVIEWS_FEED_URL,
@@ -89,19 +71,18 @@ class NewsController {
       for (const url of feedUrls) {
         try {
           const feed = await parser.parseURL(url);
-          if (!feed?.items) {
+          if (!feed?.items?.length) {
             logger.warn(`Empty feed: ${url}`);
             continue;
           }
           const items = feed.items
-            .filter(item => item.title && item.link && item.pubDate) // Validate required fields
+            .filter(item => item.title && item.link && (item.pubDate || item.isoDate))
             .map(item => ({
               title: item.title,
               description: item.contentSnippet || item.content || '',
               link: item.link,
               pubDate: new Date(item.pubDate || item.isoDate),
-              image:
-                item.enclosure?.url ||
+              image: item.enclosure?.url ||
                 (item.mediaContent ? (Array.isArray(item.mediaContent) ? item.mediaContent[0]?.$?.url : item.mediaContent.$?.url) : null) ||
                 (item.mediaThumbnail ? (Array.isArray(item.mediaThumbnail) ? item.mediaThumbnail[0]?.$?.url : item.mediaThumbnail.$?.url) : null) ||
                 'https://via.placeholder.com/150',
@@ -111,24 +92,18 @@ class NewsController {
           newsItems.push(...items);
           logger.info(`Fetched ${items.length} items from ${url}`);
         } catch (error) {
-          logger.warn(`Failed to parse RSS feed ${url}: ${error.message}`);
+          logger.warn(`RSS feed error (${url}): ${error.message}`);
         }
       }
 
-      // Save to database
       for (const item of newsItems) {
         try {
-          await News.updateOne(
-            { link: item.link },
-            { $set: item },
-            { upsert: true }
-          );
+          await News.updateOne({ link: item.link }, { $set: item }, { upsert: true });
         } catch (error) {
-          logger.error(`Failed to save news item ${item.link}: ${error.message}`);
+          logger.error(`Failed to save item (${item.link}): ${error.message}`);
         }
       }
 
-      // Re-query database
       const updatedNews = await News.find(query)
         .sort({ pubDate: -1 })
         .skip((page - 1) * limit)
@@ -136,23 +111,16 @@ class NewsController {
         .exec();
       const updatedTotal = await News.countDocuments(query);
 
-      const response = {
-        success: true,
-        data: updatedNews,
-        pagination: {
-          current: parseInt(page),
-          total: updatedTotal,
-          hasMore: page * limit < updatedTotal
-        }
-      };
+      const response = { success: true, data: updatedNews, pagination: { current: parseInt(page), total: updatedTotal, hasMore: page * limit < updatedTotal } };
       cache.put(cacheKey, response, CACHE_DURATION);
-      logger.info(`Returning ${updatedNews.length} news after RSS fetch`);
+      logger.info(`RSS + DB: ${updatedNews.length} items`);
       res.json(response);
     } catch (error) {
-      logger.error('Error fetching news:', {
+      logger.error('News fetch error:', {
         message: error.message,
         stack: error.stack,
-        query: req.query
+        query: req.query,
+        timestamp: new Date().toISOString()
       });
       next(new ApiError('Не удалось получить новости', 500));
     }
@@ -203,14 +171,13 @@ class NewsController {
           continue;
         }
         const items = feed.items
-          .filter(item => item.title && item.link && item.pubDate)
+          .filter(item => item.title && item.link && (item.pubDate || item.isoDate))
           .map(item => ({
             title: item.title,
             description: item.contentSnippet || item.content || '',
             link: item.link,
             pubDate: new Date(item.pubDate || item.isoDate),
-            image:
-              item.enclosure?.url ||
+            image: item.enclosure?.url ||
               (item.mediaContent ? (Array.isArray(item.mediaContent) ? item.mediaContent[0]?.$?.url : item.mediaContent.$?.url) : null) ||
               (item.mediaThumbnail ? (Array.isArray(item.mediaThumbnail) ? item.mediaThumbnail[0]?.$?.url : item.mediaThumbnail.$?.url) : null) ||
               'https://via.placeholder.com/150',
