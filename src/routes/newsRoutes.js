@@ -115,4 +115,72 @@ router.get('/latest', newsController.getLatestNews);
 
 /**
  * @swagger
- * /api/news/search
+ * /api/news/search:
+ *   get:
+ *     tags: [News]
+ *     summary: Поиск игровых новостей
+ *     description: Поиск новостей по строке запроса
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Строка поискового запроса
+ *     responses:
+ *       200:
+ *         description: Результаты поиска
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/NewsItem'
+ *       400:
+ *         description: Неверный поисковый запрос
+ *       500:
+ *         description: Ошибка сервера
+ */
+router.get('/search', [
+  query('q').notEmpty().trim().escape(),
+  validate
+], newsController.searchNews);
+
+/**
+ * @swagger
+ * /api/news/fetch:
+ *   post:
+ *     tags: [News]
+ *     summary: Manually fetch news from RSS feeds
+ *     description: Triggers news fetching and saving to database
+ *     responses:
+ *       200:
+ *         description: News fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Server error
+ */
+router.post('/fetch', async (req, res, next) => {
+  try {
+    await newsController.fetchNews();
+    res.json({ success: true, message: 'News fetched and saved' });
+  } catch (error) {
+    logger.error('Fetch news error:', { message: error.message, stack: error.stack });
+    next(new ApiError('Failed to fetch news', 500));
+  }
+});
+
+module.exports = router;
