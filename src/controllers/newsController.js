@@ -10,6 +10,7 @@ const parser = new RSSParser({
   }
 });
 const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 300000;
+const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000; // Максимальное количество новостей в БД
 
 class NewsController {
   categorizeNews(item) {
@@ -60,58 +61,7 @@ class NewsController {
         return res.json(response);
       }
 
-      const feedUrls = [
-        process.env.IGN_NEWS_FEED_URL,
-        process.env.IGN_REVIEWS_FEED_URL,
-        process.env.GAMESPOT_NEWS_FEED_URL,
-        process.env.GAMESPOT_REVIEWS_FEED_URL,
-        process.env.POLYGON_FEED_URL,
-        process.env.KOTAKU_FEED_URL,
-        process.env.EUROGAMER_FEED_URL,
-        process.env.PCGAMER_FEED_URL
-      ].filter(url => url);
-
-      logger.info('Fetching RSS feeds:', { feedUrls });
-
-      const newsItems = [];
-      for (const url of feedUrls) {
-        try {
-          const feed = await parser.parseURL(url);
-          if (!feed?.items?.length) {
-            logger.warn(`Empty feed: ${url}`);
-            continue;
-          }
-          const items = feed.items
-            .filter(item => item.title && item.link && (item.pubDate || item.isoDate))
-            .map(item => ({
-              title: item.title,
-              description: item.contentSnippet || item.content || '',
-              link: item.link,
-              pubDate: new Date(item.pubDate || item.isoDate),
-              image: item.enclosure?.url ||
-                (item.mediaContent ? (Array.isArray(item.mediaContent) ? item.mediaContent[0]?.$?.url : item.mediaContent.$?.url) : null) ||
-                (item.mediaThumbnail ? (Array.isArray(item.mediaThumbnail) ? item.mediaThumbnail[0]?.$?.url : item.mediaThumbnail.$?.url) : null) ||
-                'https://via.placeholder.com/150',
-              author: item.creator || item.author || 'Unknown',
-              category: this.categorizeNews(item)
-            }));
-          newsItems.push(...items);
-          logger.info(`Fetched ${items.length} items from ${url}`);
-        } catch (error) {
-          logger.warn(`RSS feed error (${url}): ${error.message}`);
-        }
-      }
-
-      logger.info(`Total RSS items fetched: ${newsItems.length}`);
-
-      for (const item of newsItems) {
-        try {
-          await News.updateOne({ link: item.link }, { $set: item }, { upsert: true });
-          logger.info(`Saved item: ${item.link}`);
-        } catch (error) {
-          logger.error(`Failed to save item (${item.link}): ${error.message}`);
-        }
-      }
+      const newsItems = await this.fetchNews();
 
       const updatedNews = await News.find(query)
         .sort({ pubDate: -1 })
@@ -179,7 +129,7 @@ class NewsController {
     for (const url of feedUrls) {
       try {
         const feed = await parser.parseURL(url);
-        if (!feed?.items) {
+        if (!feed?.items?.length) {
           logger.warn(`Empty feed: ${url}`);
           continue;
         }
@@ -200,25 +150,44 @@ class NewsController {
         newsItems.push(...items);
         logger.info(`Fetched ${items.length} items from ${url}`);
       } catch (error) {
-        logger.warn(`Failed to parse RSS feed ${url}: ${error.message}`);
+        logger.warn(`RSS feed error (${url}): ${error.message}`);
       }
     }
 
     logger.info(`Total RSS items fetched: ${newsItems.length}`);
 
+    // Проверка количества записей в БД
+    const currentCount = await News.countDocuments();
+    logger.info(`Current news count in DB: ${currentCount}`);
+
     for (const item of newsItems) {
       try {
-        await News.updateOne(
-          { link: item.link },
-          { $set: item },
-          { upsert: true }
-        );
-        logger.info(`Saved item: ${item.link}`);
+        // Если достигнут лимит, удаляем самую старую новость
+        if (currentCount >= MAX_NEWS_LIMIT) {
+          const oldestNews = await News.findOne().sort({ pubDate: 1 }).exec();
+          if (oldestNews) {
+            await News.deleteOne({ _id: oldestNews._id });
+            logger.info(`Deleted oldest news item: ${oldestNews.link}`);
+            currentCount--; // Уменьшаем счетчик
+          }
+        }
+
+        // Проверяем, существует ли новость
+        const existingNews = await News.findOne({ link: item.link }).exec();
+        if (!existingNews) {
+          await News.create(item);
+          logger.info(`Added new item: ${item.link}`);
+          currentCount++; // Увеличиваем счетчик
+        } else {
+          await News.updateOne({ link: item.link }, { $set: item });
+          logger.info(`Updated existing item: ${item.link}`);
+        }
       } catch (error) {
-        logger.error(`Failed to save news item ${item.link}: ${error.message}`);
+        logger.error(`Failed to process item (${item.link}): ${error.message}`);
       }
     }
-    logger.info(`Saved ${newsItems.length} news items`);
+
+    logger.info(`Processed ${newsItems.length} news items, current DB count: ${currentCount}`);
     return newsItems;
   }
 }
