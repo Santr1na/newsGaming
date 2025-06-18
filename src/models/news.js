@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const newsSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: String,
-  link: { type: String, required: true, unique: true },
+  link: { type: String, required: true, unique: true }, // unique: true достаточно
   pubDate: { type: Date, required: true },
   image: String,
   author: String,
@@ -14,5 +14,4 @@ const newsSchema = new mongoose.Schema({
   }
 });
 
-newsSchema.index({ link: 1 }); // Явный индекс на поле link
 module.exports = mongoose.model('News', newsSchema);

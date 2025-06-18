@@ -36,6 +36,11 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  logger.info(`Server running on http://localhost:${port}`);
+});
+
 swaggerSetup(app);
 
 app.use('/api', routes);
