@@ -1,7 +1,7 @@
 const cache = require('memory-cache');
    const RSSParser = require('rss-parser');
-   const logger = require('./middleware/newsHandler');
-   const News = require('./models/news');
+   const logger = require('../utils/logger');
+   const News = require('../models/news'); // Исправлен путь
 
    const parser = new RSSParser({
      customFields: {
@@ -9,7 +9,7 @@ const cache = require('memory-cache');
      }
    });
 
-   const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 60000; // 1 минута
+   const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 60000;
    const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000;
 
    class NewsController {
@@ -169,6 +169,7 @@ const cache = require('memory-cache');
        }
 
        logger.info(`Processed ${newsItems.length} news items, current DB count: ${await News.countDocuments()}`);
+       cache.clear();
        return newsItems;
      };
    }

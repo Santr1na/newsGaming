@@ -7,13 +7,12 @@ const express = require('express');
 
    const errorHandler = require('./middleware/errorHandler');
    const routes = require('./routes');
-   const logger = require('./utils/newsHandler');
+   const logger = require('./utils/logger'); // Исправлен импорт
    const swaggerSetup = require('./utils/swagger');
    const newsController = require('./controllers/newsController');
 
    const app = express();
 
-   // Включаем trust proxy для Vercel
    app.set('trust proxy', 1);
 
    const mongoose = require('mongoose');
@@ -24,7 +23,7 @@ const express = require('express');
        logger.error('MongoDB connection error:', {
          message: err.message,
          stack: err.stack,
-         uri: process.env.MONGO_URI ? 'MONGO_URI set' : null
+         uri: process.env.MONGO_URI ? 'MONGO_URI set' : 'MONGO_URI missing'
        });
        process.exit(1);
      });
