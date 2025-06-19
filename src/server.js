@@ -61,7 +61,7 @@ const express = require('express');
    });
 
    // Настраиваем периодический вызов fetchNews (каждые 5 минут)
-   cron.schedule('*/1 * * * *', async () => {
+   cron.schedule('*/5 * * * *', async () => {
      try {
        logger.info('Running scheduled news fetch...');
        await newsController.fetchNews();
