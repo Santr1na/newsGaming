@@ -1,15 +1,19 @@
 {
   "version": 2,
   "builds": [
-    {
-      "src": "src/server.js",
-      "use": "@vercel/node"
-    }
+    "src": "src/server.js",
+    "use": "@vercel/node"
   ],
   "routes": [
     {
       "src": "/(.*)",
       "dest": "/src/server.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/news/fetch",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

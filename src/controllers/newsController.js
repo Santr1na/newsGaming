@@ -1,126 +1,104 @@
 const cache = require('memory-cache');
-const RSSParser = require('rss-parser');
-const logger = require('../utils/logger');
-const { ApiError } = require('../utils/errors');
-const News = require('../models/news');
+   const RSSParser = require('rss-parser');
+   const logger = require('./middleware/newsHandler');
+   const News = require('./models/news');
 
-const parser = new RSSParser({
-  customFields: {
-    item: [['media:content', 'mediaContent'], ['media:thumbnail', 'mediaThumbnail'], ['dc:creator', 'creator']]
-  }
-});
-const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 300000;
-const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000; // Максимальное количество новостей в БД
+   const parser = new RSSParser({
+     customFields: {
+       item: [['media:content', 'mediaContent'], ['media:thumbnail', 'newsThumbnail'], ['dc:creator', 'creator']]
+     }
+   });
 
-class NewsController {
-  categorizeNews(item) {
-    const titleLower = (item.title || '').toLowerCase();
-    const contentLower = (item.contentSnippet || '').toLowerCase();
-    if (titleLower.includes('rumor') || titleLower.includes('слух') || contentLower.includes('rumor')) return 'rumors';
-    if (titleLower.includes('announc') || titleLower.includes('анонс') || contentLower.includes('announc')) return 'soon';
-    if (titleLower.includes('poll') || titleLower.includes('опрос') || contentLower.includes('poll')) return 'polls';
-    if (titleLower.includes('recommend') || titleLower.includes('рекоменд') || contentLower.includes('recommend')) return 'recommendations';
-    return 'update';
-  }
+   const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 60000; // 1 минута
+   const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000;
 
-  getLatestNews = async (req, res, next) => {
-    try {
-      const { page = 1, limit = 10, category, from, to } = req.query;
-      const query = {};
-      if (category) query.category = category;
-      if (from && to) {
-        query.pubDate = { $gte: new Date(from), $lte: new Date(to) };
-      } else if (from) {
-        query.pubDate = { $gte: new Date(from) };
-      } else if (to) {
-        query.pubDate = { $lte: new Date(to) };
-      }
+   class NewsController {
+     categorizeNews(item) {
+       const titleLower = (item.title || '').toLowerCase();
+       const contentLower = (item.contentSnippet || '').toLowerCase();
+       if (titleLower.includes('rumor') || titleLower.includes('слух') || contentLower.includes('rumor')) return 'rumors';
+       if (titleLower.includes('announc') || titleLower.includes('анонс') || contentLower.includes('announc')) return 'soon';
+       if (titleLower.includes('poll') || titleLower.includes('опрос') || contentLower.includes('poll')) return 'polls';
+       if (titleLower.includes('recommend') || titleLower.includes('рекоменд') || contentLower.includes('recommend')) return 'recommendations';
+       return 'update';
+     }
 
-      logger.info('Query params:', { page, limit, category, from, to });
+     getLatestNews = async (req, res, next) => {
+       try {
+         const { page = 1, limit = 10, category, from, to } = req.query;
+         const query = {};
+         if (category) query.category = category;
+         if (from && to) {
+           query.pubDate = { $gte: new Date(from), $lte: new Date(to) };
+         } else if (from) {
+           query.pubDate = { $gte: new Date(from) };
+         } else if (to) {
+           query.pubDate = { $lte: new Date(to) };
+         }
 
-      const cacheKey = `news_${page}_${limit}_${category || 'all'}_${from || 'no-from'}_${to || 'no-to'}`;
-      const cachedNews = cache.get(cacheKey);
-      if (cachedNews) {
-        logger.info(`Cache hit: ${cacheKey}`);
-        return res.json(cachedNews);
-      }
+         logger.info('Query params:', { page, limit, category, from, to });
 
-      const newsFromDB = await News.find(query)
-        .sort({ pubDate: -1 })
-        .skip((page - 1) * limit)
-        .limit(parseInt(limit))
-        .exec();
-      const total = await News.countDocuments(query);
+         const cacheKey = `news_${page}_${limit}_${category || 'all'}_${from || 'no-from'}_${to || 'no-to'}`;
+         const cachedNews = cache.get(cacheKey);
+         if (cachedNews) {
+           logger.info(`Cache hit: ${cacheKey}`);
+           return res.json(cachedNews);
+         }
 
-      logger.info('DB query result:', { count: newsFromDB.length, total });
+         const newsFromDB = await News.find(query)
+           .sort({ pubDate: -1 })
+           .skip((page - 1) * limit)
+           .limit(parseInt(limit))
+           .exec();
+         const total = await News.countDocuments(query);
 
-      if (newsFromDB.length >= limit || (page - 1) * limit + newsFromDB.length >= total) {
-        const response = { success: true, data: newsFromDB, pagination: { current: parseInt(page), total, hasMore: page * limit < total } };
-        cache.put(cacheKey, response, CACHE_DURATION);
-        logger.info(`DB hit: ${newsFromDB.length} items`);
-        return res.json(response);
-      }
+         logger.info('DB query result:', { count: newsFromDB.length, total });
 
-      const newsItems = await this.fetchNews();
+         const response = { success: true, data: newsFromDB, pagination: { current: parseInt(page), total, hasMore: page * limit < total } };
+         cache.put(cacheKey, response, CACHE_DURATION);
+         logger.info(`DB hit: ${newsFromDB.length} items`);
+         return res.json(response);
+       } catch (error) {
+         logger.error('News fetch error:', {
+           message: error.message,
+           stack: error.stack,
+           query: req.query
+         });
+         res.status(500).json({ success: false, message: 'Failed to fetch news' });
+       }
+     };
 
-      const updatedNews = await News.find(query)
-        .sort({ pubDate: -1 })
-        .skip((page - 1) * limit)
-        .limit(parseInt(limit))
-        .exec();
-      const updatedTotal = await News.countDocuments(query);
+     searchNews = async (req, res, next) => {
+       try {
+         const { q } = req.query;
+         const query = {
+           $or: [
+             { title: { $regex: q, $options: 'i' } },
+             { description: { $regex: q, $options: 'i' } }
+           ]
+         };
+         const news = await News.find(query).exec();
+         res.json({ success: true, data: news });
+       } catch (error) {
+         logger.error('Error searching news:', {
+           message: error.message,
+           stack: error.stack,
+           query: req.query
+         });
+         res.status(500).json({ success: false, message: 'Failed to search news' });
+       }
+     };
 
-      logger.info('Updated DB query result:', { count: updatedNews.length, updatedTotal });
-
-      const response = { success: true, data: updatedNews, pagination: { current: parseInt(page), total: updatedTotal, hasMore: page * limit < updatedTotal } };
-      cache.put(cacheKey, response, CACHE_DURATION);
-      logger.info(`RSS + DB: ${updatedNews.length} items`);
-      res.json(response);
-    } catch (error) {
-      logger.error('News fetch error:', {
-        message: error.message,
-        stack: error.stack,
-        query: req.query,
-        timestamp: new Date().toISOString()
-      });
-      next(new ApiError('Не удалось получить новости', 500));
-    }
-  };
-
-  searchNews = async (req, res, next) => {
-    try {
-      const { q } = req.query;
-      const query = {
-        $or: [
-          { title: { $regex: q, $options: 'i' } },
-          { description: { $regex: q, $options: 'i' } }
-        ]
-      };
-      const news = await News.find(query).exec();
-      res.json({
-        success: true,
-        data: news
-      });
-    } catch (error) {
-      logger.error('Error searching news:', {
-        message: error.message,
-        stack: error.stack,
-        query: req.query
-      });
-      next(new ApiError('Не удалось выполнить поиск новостей', 500));
-    }
-  };
-
-  async fetchNews() {
+     fetchNews = async () => {
        const feedUrls = [
-         process.env.IGN_NEWS_FEED_URL,
-         process.env.IGN_REVIEWS_FEED_URL,
-         process.env.GAMESPOT_NEWS_FEED_URL,
-         process.env.GAMESPOT_REVIEWS_FEED_URL,
-         process.env.POLYGON_FEED_URL,
-         process.env.KOTAKU_FEED_URL,
-         process.env.EUROGAMER_FEED_URL,
-         process.env.PCGAMER_FEED_URL
+         process.env.IGN_NEWS_FEED,
+         process.env.IGN_REVIEWS_FEED,
+         process.env.GAMESPOT_NEWS_FEED,
+         process.env.GAMESPOT_REVIEWS_FEED,
+         process.env.POLYGON_FEED,
+         process.env.KOTAKU_FEED,
+         process.env.EUROGAMER_FEED,
+         process.env.PCGAMER_FEED
        ].filter(url => url);
 
        logger.info('Fetching RSS feeds:', { feedUrls });
@@ -138,12 +116,6 @@ class NewsController {
              .filter(item => item.title && item.link && (item.pubDate || item.isoDate))
              .map(item => {
                const pubDate = new Date(item.pubDate || item.isoDate);
-               logger.info(`Raw date for ${item.title}:`, {
-                 pubDate: item.pubDate,
-                 isoDate: item.isoDate,
-                 parsed: pubDate.toISOString()
-               });
-               // Очистка description от \n и лишних пробелов
                const cleanedDescription = (item.contentSnippet || item.content || '')
                  .replace(/\n\s*\n/g, '\n')
                  .replace(/\n/g, ' ')
@@ -155,7 +127,7 @@ class NewsController {
                  pubDate,
                  image: item.enclosure?.url ||
                    (item.mediaContent ? (Array.isArray(item.mediaContent) ? item.mediaContent[0]?.$?.url : item.mediaContent.$?.url) : null) ||
-                   (item.mediaThumbnail ? (Array.isArray(item.mediaThumbnail) ? item.mediaThumbnail[0]?.$?.url : item.mediaThumbnail.$?.url) : null) ||
+                   (item.newsThumbnail ? (Array.isArray(item.newsThumbnail) ? item.newsThumbnail[0]?.$?.url : item.newsThumbnail.$?.url) : null) ||
                    'https://via.placeholder.com/150',
                  author: item.creator || item.author || 'Unknown',
                  category: this.categorizeNews(item)
@@ -180,7 +152,6 @@ class NewsController {
              if (oldestNews) {
                await News.deleteOne({ _id: oldestNews._id });
                logger.info(`Deleted oldest news item: ${oldestNews.link}`);
-               currentCount--;
              }
            }
 
@@ -188,7 +159,6 @@ class NewsController {
            if (!existingNews) {
              await News.create(item);
              logger.info(`Added new item: ${item.link}`);
-             currentCount++;
            } else {
              await News.updateOne({ link: item.link }, { $set: item });
              logger.info(`Updated existing item: ${item.link}`);
@@ -198,9 +168,9 @@ class NewsController {
          }
        }
 
-       logger.info(`Processed ${newsItems.length} news items, current DB count: ${currentCount}`);
+       logger.info(`Processed ${newsItems.length} news items, current DB count: ${await News.countDocuments()}`);
        return newsItems;
-     }
-}
+     };
+   }
 
-module.exports = new NewsController();
+   module.exports = new NewsController();

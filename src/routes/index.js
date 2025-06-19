@@ -1,12 +1,25 @@
 const express = require('express');
-const router = express.Router();
+   const { query } = require('express-validator');
+   const newsController = require('../controllers/newsController');
+   const validate = require('../middleware/validate');
 
-const feedsRoutes = require('./feedsRoutes');
-const newsRoutes = require('./newsRoutes'); // if you already have
-const gamesRoutes = require('./gamesRoutes'); // if applicable
+   const router = express.Router();
 
-router.use('/feeds', feedsRoutes);
-router.use('/news', newsRoutes);
-router.use('/games', gamesRoutes);
+   router.get('/latest', newsController.getLatestNews);
 
-module.exports = router;
+   router.get('/search', [
+     query('q').notEmpty().trim().escape(),
+     validate
+   ], newsController.searchNews);
+
+   router.post('/fetch', async (req, res) => {
+     try {
+       await newsController.fetchNews();
+       res.json({ success: true, message: 'News fetched and saved' });
+     } catch (error) {
+       logger.error('Fetch news error:', { message: error.message, stack: error.stack });
+       res.status(500).json({ success: false, message: 'Failed to fetch news' });
+     }
+   });
+
+   module.exports = router;
