@@ -33,8 +33,10 @@ const express = require('express');
    app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
    const limiter = rateLimit({
-     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 900000,
-     max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100
+     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 900000, // 15 минут
+     max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // 100 запросов на IP
+     standardHeaders: true, // Включаем стандартные заголовки RateLimit
+     legacyHeaders: false // Отключаем устаревшие заголовки X-RateLimit
    });
    app.use(limiter);
 
