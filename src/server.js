@@ -2,12 +2,13 @@ const express = require('express');
    const cors = require('cors');
    const helmet = require('helmet');
    const morgan = require('morgan');
-   const { rateLimit } = require('express-rate-limit');
+   const rateLimit = require('express-rate-limit'); // Импорт без деструктуризации
+   const cron = require('node-cron');
    require('dotenv').config();
 
    const errorHandler = require('./middleware/errorHandler');
    const routes = require('./routes');
-   const logger = require('./utils/logger'); // Исправлен импорт
+   const logger = require('./utils/logger');
    const swaggerSetup = require('./utils/swagger');
    const newsController = require('./controllers/newsController');
 
@@ -35,8 +36,8 @@ const express = require('express');
 
    const limiter = rateLimit({
      windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 900000,
-     max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 10000,
-     standardHeaders: true,
+     limit: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 10000, // Изменено с max на limit
+     standardHeaders: 'draft-7', // Обновлено для новых стандартов
      legacyHeaders: false,
      message: async (req) => {
        logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
@@ -58,6 +59,19 @@ const express = require('express');
        logger.info(`Initial news fetch completed: ${newsItems.length} items`);
      } catch (error) {
        logger.error('Error fetching news on startup:', {
+         message: error.message,
+         stack: error.stack
+       });
+     }
+   });
+
+   cron.schedule('*/1 * * * *', async () => {
+     try {
+       logger.info('Running scheduled news fetch...');
+       const newsItems = await newsController.fetchNews();
+       logger.info(`Scheduled news fetch completed: ${newsItems.length} items`);
+     } catch (error) {
+       logger.error('Error during scheduled news fetch:', {
          message: error.message,
          stack: error.stack
        });
