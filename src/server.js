@@ -65,7 +65,7 @@ const express = require('express');
      }
    });
 
-   cron.schedule('*/1 * * * *', async () => {
+   cron.schedule('*/10 * * * *', async () => {
      try {
        logger.info('Running scheduled news fetch...');
        const newsItems = await newsController.fetchNews();
