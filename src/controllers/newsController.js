@@ -105,8 +105,6 @@ fetchNews = async () => {
   ].filter(url => url)
 };
 
-       logger.info('Fetching RSS feeds:', { feedUrls });
-
        const newsItems = [];
        for (const url of feedUrls) {
          try {
