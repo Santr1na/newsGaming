@@ -102,7 +102,7 @@ fetchNews = async () => {
     process.env.THEGAMER_FEED,
     process.env.VGC_NEWS_FEED,
     process.env.DESTRUCTOID_FEED
-  ].filter(url => url);
+  ].filter(url => url)
 };
 
        logger.info('Fetching RSS feeds:', { feedUrls });
