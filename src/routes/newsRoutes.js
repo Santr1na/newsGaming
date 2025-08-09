@@ -2,14 +2,9 @@ const express = require('express');
 const { query } = require('express-validator');
 const newsController = require('../controllers/newsController');
 const validate = require('../middleware/validate');
+const logger = require('../utils/logger');
 
 const router = express.Router();
-
-console.log('newsController:', newsController);
-
-if (!newsController.getLatestNews) {
-  throw new Error('newsController.getLatestNews is undefined');
-}
 
 /**
  * @swagger
@@ -42,7 +37,6 @@ if (!newsController.getLatestNews) {
  *           type: string
  *           enum: [rumors, recommendations, polls, soon, update]
  *           description: Категория новости
- *   responses:
  *     PaginatedResponse:
  *       type: object
  *       properties:
@@ -65,11 +59,11 @@ if (!newsController.getLatestNews) {
 
 /**
  * @swagger
- * /api/news/latest:
+ * /news/latest:
  *   get:
  *     tags: [News]
  *     summary: Получить последние игровые новости
- *     description: Возвращает игровые новости с пагинацией и фильтрацией по категории и дате
+ *     description: Возвращает игровые новости с пагинацией и фильтрацией по категории, дате и языку
  *     parameters:
  *       - in: query
  *         name: page
@@ -101,6 +95,13 @@ if (!newsController.getLatestNews) {
  *           type: string
  *           format: date-time
  *         description: Конечная дата (ISO, например, 2025-06-12T23:59:59Z)
+ *       - in: query
+ *         name: lang
+ *         schema:
+ *           type: string
+ *           enum: [en, ru]
+ *           default: en
+ *         description: Язык перевода (en или ru)
  *     responses:
  *       200:
  *         description: Успешный ответ с новостями
@@ -115,11 +116,11 @@ router.get('/latest', newsController.getLatestNews);
 
 /**
  * @swagger
- * /api/news/search:
+ * /news/search:
  *   get:
  *     tags: [News]
  *     summary: Поиск игровых новостей
- *     description: Поиск новостей по строке запроса
+ *     description: Поиск новостей по строке запроса с поддержкой языка
  *     parameters:
  *       - in: query
  *         name: q
@@ -127,6 +128,13 @@ router.get('/latest', newsController.getLatestNews);
  *         schema:
  *           type: string
  *         description: Строка поискового запроса
+ *       - in: query
+ *         name: lang
+ *         schema:
+ *           type: string
+ *           enum: [en, ru]
+ *           default: en
+ *         description: Язык перевода (en или ru)
  *     responses:
  *       200:
  *         description: Результаты поиска
@@ -153,7 +161,7 @@ router.get('/search', [
 
 /**
  * @swagger
- * /api/news/fetch:
+ * /news/fetch:
  *   post:
  *     tags: [News]
  *     summary: Manually fetch news from RSS feeds
@@ -173,13 +181,13 @@ router.get('/search', [
  *       500:
  *         description: Server error
  */
-router.post('/fetch', async (req, res, next) => {
+router.post('/fetch', async (req, res) => {
   try {
     await newsController.fetchNews();
     res.json({ success: true, message: 'News fetched and saved' });
   } catch (error) {
     logger.error('Fetch news error:', { message: error.message, stack: error.stack });
-    next(new ApiError('Failed to fetch news', 500));
+    res.status(500).json({ success: false, message: 'Failed to fetch news' });
   }
 });
 
