@@ -23,6 +23,7 @@
     "mongodb": "^6.17.0",
     "mongoose": "^8.15.1",
     "morgan": "^1.10.0",
+    "node-cache": "^5.1.2",
     "node-cron": "^4.1.1",
     "rss-parser": "^3.13.0",
     "swagger-jsdoc": "^6.2.8",
