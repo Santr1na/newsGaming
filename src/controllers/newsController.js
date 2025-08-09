@@ -18,7 +18,7 @@ const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000;
 const yandexUrl = 'https://translate.api.cloud.yandex.net/translate/v2/translate';
 const yandexApiKey = process.env.YANDEX_API_KEY || 'AQVNxDoD3ieMR_Fa-Jc-FWEZyo4YzCx-7bRZzDk_';
 const folderId = 'b1gao45322bkr63676l8';
-const cacheNode = new NodeCache({ stdTTL: 86400 }); // Кэш для переводов
+const cacheNode = new NodeCache({ stdTTL: 86400 });
 
 // Проверка API-ключа
 if (!process.env.YANDEX_API_KEY) {
@@ -46,15 +46,16 @@ async function translateText(text, targetLang) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Api-Key ${yandexApiKey}`
-      }
+      },
+      timeout: 5000 // Таймаут 5 секунд
     });
     const translatedText = response.data.translations[0].text;
     cacheNode.set(cacheKey, translatedText);
     logger.info(`Переведено: ${text} -> ${translatedText}`);
     return translatedText;
   } catch (error) {
-    logger.error(`Ошибка перевода для ${text}: ${error.message}, Код: ${error.response?.status}`);
-    return text;
+    logger.error(`Ошибка перевода для ${text}: ${error.message}, Код: ${error.response?.status || 'N/A'}`);
+    return text; // Возвращаем оригинальный текст при ошибке
   }
 }
 
@@ -68,7 +69,7 @@ async function enhanceImage(imageUrl) {
   }
   try {
     logger.info(`Улучшение изображения: ${imageUrl}`);
-    const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 5000 });
     const imageBuffer = Buffer.from(imageResponse.data);
     const outputDir = path.join(__dirname, '../images');
     await fs.mkdir(outputDir, { recursive: true });
@@ -159,8 +160,8 @@ class NewsController {
               link: item.link,
               pubDate,
               image: await enhanceImage(image),
-              author: author,
-              category: category,
+              author,
+              category,
               translated: {
                 ru: translatedRu,
                 en: translatedEn
@@ -234,7 +235,7 @@ class NewsController {
           title: item.translated?.[lang]?.title || item.title,
           description: item.translated?.[lang]?.description || item.description,
           link: item.link,
-          pubDate: item.pubDate,
+          pubDate: item.pubDate.toISOString(),
           image: item.image,
           author: item.translated?.[lang]?.author || item.author,
           category: item.translated?.[lang]?.category || item.category
@@ -272,7 +273,7 @@ class NewsController {
           title: item.translated?.[lang]?.title || item.title,
           description: item.translated?.[lang]?.description || item.description,
           link: item.link,
-          pubDate: item.pubDate,
+          pubDate: item.pubDate.toISOString(),
           image: item.image,
           author: item.translated?.[lang]?.author || item.author,
           category: item.translated?.[lang]?.category || item.category
