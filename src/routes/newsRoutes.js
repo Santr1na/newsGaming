@@ -63,7 +63,7 @@ const router = express.Router();
  *   get:
  *     tags: [News]
  *     summary: Получить последние игровые новости
- *     description: Возвращает игровые новости с пагинацией и фильтрацией по категории, дате и языку
+ *     description: Возвращает игровые новости с пагинацией и фильтрацией по категории и дате
  *     parameters:
  *       - in: query
  *         name: page
@@ -95,13 +95,6 @@ const router = express.Router();
  *           type: string
  *           format: date-time
  *         description: Конечная дата (ISO, например, 2025-06-12T23:59:59Z)
- *       - in: query
- *         name: lang
- *         schema:
- *           type: string
- *           enum: [en, ru]
- *           default: en
- *         description: Язык перевода (en или ru)
  *     responses:
  *       200:
  *         description: Успешный ответ с новостями
@@ -120,7 +113,7 @@ router.get('/latest', newsController.getLatestNews);
  *   get:
  *     tags: [News]
  *     summary: Поиск игровых новостей
- *     description: Поиск новостей по строке запроса с поддержкой языка
+ *     description: Поиск новостей по строке запроса
  *     parameters:
  *       - in: query
  *         name: q
@@ -128,13 +121,6 @@ router.get('/latest', newsController.getLatestNews);
  *         schema:
  *           type: string
  *         description: Строка поискового запроса
- *       - in: query
- *         name: lang
- *         schema:
- *           type: string
- *           enum: [en, ru]
- *           default: en
- *         description: Язык перевода (en или ru)
  *     responses:
  *       200:
  *         description: Результаты поиска
