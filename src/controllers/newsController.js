@@ -15,49 +15,7 @@ const parser = new RSSParser({
 
 const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 60000;
 const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000;
-const yandexUrl = 'https://translate.api.cloud.yandex.net/translate/v2/translate';
-const yandexApiKey = process.env.YANDEX_API_KEY || 'AQVNxDoD3ieMR_Fa-Jc-FWEZyo4YzCx-7bRZzDk_';
-const folderId = 'b1gao45322bkr63676l8';
 const cacheNode = new NodeCache({ stdTTL: 86400 });
-
-// Проверка API-ключа
-if (!process.env.YANDEX_API_KEY) {
-  logger.error('YANDEX_API_KEY is not set in environment variables');
-  throw new Error('YANDEX_API_KEY is required');
-}
-
-// Функция для перевода текста через Yandex
-async function translateText(text, targetLang) {
-  if (!text || text === '') return text;
-  const cacheKey = `${text}:${targetLang}`;
-  const cachedTranslation = cacheNode.get(cacheKey);
-  if (cachedTranslation) {
-    logger.info(`Кэшированный перевод для ${text} (${targetLang}): ${cachedTranslation}`);
-    return cachedTranslation;
-  }
-  try {
-    logger.info(`Перевод текста: ${text} на ${targetLang}`);
-    const response = await axios.post(yandexUrl, {
-      folderId: folderId,
-      texts: [text],
-      sourceLanguageCode: 'en',
-      targetLanguageCode: targetLang
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Api-Key ${yandexApiKey}`
-      },
-      timeout: 5000 // Таймаут 5 секунд
-    });
-    const translatedText = response.data.translations[0].text;
-    cacheNode.set(cacheKey, translatedText);
-    logger.info(`Переведено: ${text} -> ${translatedText}`);
-    return translatedText;
-  } catch (error) {
-    logger.error(`Ошибка перевода для ${text}: ${error.message}, Код: ${error.response?.status || 'N/A'}`);
-    return text; // Возвращаем оригинальный текст при ошибке
-  }
-}
 
 // Функция для локального улучшения изображений с Sharp
 async function enhanceImage(imageUrl) {
@@ -95,10 +53,10 @@ class NewsController {
   categorizeNews(item) {
     const titleLower = (item.title || '').toLowerCase();
     const contentLower = (item.contentSnippet || '').toLowerCase();
-    if (titleLower.includes('rumor') || titleLower.includes('слух') || contentLower.includes('rumor')) return 'rumors';
-    if (titleLower.includes('announc') || titleLower.includes('анонс') || contentLower.includes('announc')) return 'soon';
-    if (titleLower.includes('poll') || titleLower.includes('опрос') || contentLower.includes('poll')) return 'polls';
-    if (titleLower.includes('recommend') || titleLower.includes('рекоменд') || contentLower.includes('recommend')) return 'recommendations';
+    if (titleLower.includes('rumor') || contentLower.includes('rumor')) return 'rumors';
+    if (titleLower.includes('announc') || contentLower.includes('announc')) return 'soon';
+    if (titleLower.includes('poll') || contentLower.includes('poll')) return 'polls';
+    if (titleLower.includes('recommend') || contentLower.includes('recommend')) return 'recommendations';
     return 'update';
   }
 
@@ -141,19 +99,6 @@ class NewsController {
               'https://via.placeholder.com/150';
             const category = this.categorizeNews(item);
             const author = item.creator || item.author || 'Unknown';
-            // Перевод на русский и английский
-            const translatedRu = {
-              title: await translateText(item.title, 'ru'),
-              description: await translateText(cleanedDescription, 'ru'),
-              category: await translateText(category, 'ru'),
-              author: await translateText(author, 'ru')
-            };
-            const translatedEn = {
-              title: item.title,
-              description: cleanedDescription,
-              category: category,
-              author: author
-            };
             return {
               title: item.title,
               description: cleanedDescription,
@@ -161,11 +106,7 @@ class NewsController {
               pubDate,
               image: await enhanceImage(image),
               author,
-              category,
-              translated: {
-                ru: translatedRu,
-                en: translatedEn
-              }
+              category
             };
           });
         const resolvedItems = await Promise.all(items);
@@ -206,7 +147,7 @@ class NewsController {
 
   async getLatestNews(req, res) {
     try {
-      const { page = 1, limit = 10, category, from, to, lang = 'en' } = req.query;
+      const { page = 1, limit = 10, category, from, to } = req.query;
       const query = {};
       if (category) query.category = category;
       if (from && to) {
@@ -216,8 +157,8 @@ class NewsController {
       } else if (to) {
         query.pubDate = { $lte: new Date(to) };
       }
-      logger.info('Query params:', { page, limit, category, from, to, lang });
-      const cacheKey = `news_${page}_${limit}_${category || 'all'}_${from || 'no-from'}_${to || 'no-to'}_${lang}`;
+      logger.info('Query params:', { page, limit, category, from, to });
+      const cacheKey = `news_${page}_${limit}_${category || 'all'}_${from || 'no-from'}_${to || 'no-to'}`;
       const cachedNews = cache.get(cacheKey);
       if (cachedNews) {
         logger.info(`Cache hit: ${cacheKey}`);
@@ -232,13 +173,13 @@ class NewsController {
       const response = {
         success: true,
         data: newsFromDB.map(item => ({
-          title: item.translated?.[lang]?.title || item.title,
-          description: item.translated?.[lang]?.description || item.description,
+          title: item.title,
+          description: item.description,
           link: item.link,
           pubDate: item.pubDate.toISOString(),
           image: item.image,
-          author: item.translated?.[lang]?.author || item.author,
-          category: item.translated?.[lang]?.category || item.category
+          author: item.author,
+          category: item.category
         })),
         pagination: { current: parseInt(page), total, hasMore: page * limit < total }
       };
@@ -257,26 +198,24 @@ class NewsController {
 
   async searchNews(req, res) {
     try {
-      const { q, lang = 'en' } = req.query;
+      const { q } = req.query;
       const query = {
         $or: [
           { title: { $regex: q, $options: 'i' } },
-          { description: { $regex: q, $options: 'i' } },
-          { 'translated.ru.title': { $regex: q, $options: 'i' } },
-          { 'translated.ru.description': { $regex: q, $options: 'i' } }
+          { description: { $regex: q, $options: 'i' } }
         ]
       };
       const news = await News.find(query).exec();
       res.json({
         success: true,
         data: news.map(item => ({
-          title: item.translated?.[lang]?.title || item.title,
-          description: item.translated?.[lang]?.description || item.description,
+          title: item.title,
+          description: item.description,
           link: item.link,
           pubDate: item.pubDate.toISOString(),
           image: item.image,
-          author: item.translated?.[lang]?.author || item.author,
-          category: item.translated?.[lang]?.category || item.category
+          author: item.author,
+          category: item.category
         }))
       });
     } catch (error) {
