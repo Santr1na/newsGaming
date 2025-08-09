@@ -3,6 +3,9 @@ const RSSParser = require('rss-parser');
 const logger = require('../utils/logger');
 const News = require('../models/news');
 const axios = require('axios');
+const NodeCache = require('node-cache');
+const path = require('path');
+const fs = require('fs').promises;
 
 const parser = new RSSParser({
   customFields: {
@@ -15,7 +18,13 @@ const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000;
 const yandexUrl = 'https://translate.api.cloud.yandex.net/translate/v2/translate';
 const yandexApiKey = process.env.YANDEX_API_KEY || 'AQVNxDoD3ieMR_Fa-Jc-FWEZyo4YzCx-7bRZzDk_';
 const folderId = 'b1gao45322bkr63676l8';
-const cacheNode = new (require('node-cache'))({ stdTTL: 86400 }); // Кэш для переводов
+const cacheNode = new NodeCache({ stdTTL: 86400 }); // Кэш для переводов
+
+// Проверка API-ключа
+if (!process.env.YANDEX_API_KEY) {
+  logger.error('YANDEX_API_KEY is not set in environment variables');
+  throw new Error('YANDEX_API_KEY is required');
+}
 
 // Функция для перевода текста через Yandex
 async function translateText(text, targetLang) {
@@ -46,6 +55,38 @@ async function translateText(text, targetLang) {
   } catch (error) {
     logger.error(`Ошибка перевода для ${text}: ${error.message}, Код: ${error.response?.status}`);
     return text;
+  }
+}
+
+// Функция для локального улучшения изображений с Sharp
+async function enhanceImage(imageUrl) {
+  if (!imageUrl || imageUrl === '') return imageUrl;
+  const cachedUrl = cacheNode.get(imageUrl);
+  if (cachedUrl) {
+    logger.info(`Кэшированное изображение для ${imageUrl}: ${cachedUrl}`);
+    return cachedUrl;
+  }
+  try {
+    logger.info(`Улучшение изображения: ${imageUrl}`);
+    const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const imageBuffer = Buffer.from(imageResponse.data);
+    const outputDir = path.join(__dirname, '../images');
+    await fs.mkdir(outputDir, { recursive: true });
+    const outputFilename = `enhanced_${path.basename(imageUrl)}`;
+    const outputPath = path.join(outputDir, outputFilename);
+    await sharp(imageBuffer)
+      .resize({ width: 1000, height: 1500, fit: 'contain', kernel: 'lanczos3', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .sharpen({ sigma: 2.5 })
+      .gamma(2.0)
+      .toFormat('jpeg', { quality: 95 })
+      .toFile(outputPath);
+    const enhancedUrl = `/images/${outputFilename}`;
+    cacheNode.set(imageUrl, enhancedUrl);
+    logger.info(`Улучшенное изображение сохранено: ${enhancedUrl}`);
+    return enhancedUrl;
+  } catch (error) {
+    logger.error(`Ошибка улучшения изображения: ${error.message}`);
+    return imageUrl;
   }
 }
 
@@ -98,16 +139,19 @@ class NewsController {
               (item.newsThumbnail ? (Array.isArray(item.newsThumbnail) ? item.newsThumbnail[0]?.$?.url : item.newsThumbnail.$?.url) : null) ||
               'https://via.placeholder.com/150';
             const category = this.categorizeNews(item);
+            const author = item.creator || item.author || 'Unknown';
             // Перевод на русский и английский
             const translatedRu = {
               title: await translateText(item.title, 'ru'),
               description: await translateText(cleanedDescription, 'ru'),
-              category: await translateText(category, 'ru')
+              category: await translateText(category, 'ru'),
+              author: await translateText(author, 'ru')
             };
             const translatedEn = {
               title: item.title,
               description: cleanedDescription,
-              category: category
+              category: category,
+              author: author
             };
             return {
               title: item.title,
@@ -115,7 +159,7 @@ class NewsController {
               link: item.link,
               pubDate,
               image: await enhanceImage(image),
-              author: item.creator || item.author || 'Unknown',
+              author: author,
               category: category,
               translated: {
                 ru: translatedRu,
@@ -192,7 +236,7 @@ class NewsController {
           link: item.link,
           pubDate: item.pubDate,
           image: item.image,
-          author: item.author,
+          author: item.translated?.[lang]?.author || item.author,
           category: item.translated?.[lang]?.category || item.category
         })),
         pagination: { current: parseInt(page), total, hasMore: page * limit < total }
@@ -230,7 +274,7 @@ class NewsController {
           link: item.link,
           pubDate: item.pubDate,
           image: item.image,
-          author: item.author,
+          author: item.translated?.[lang]?.author || item.author,
           category: item.translated?.[lang]?.category || item.category
         }))
       });
@@ -242,38 +286,6 @@ class NewsController {
       });
       res.status(500).json({ success: false, message: 'Failed to search news' });
     }
-  }
-}
-
-// Функция для локального улучшения изображений с Sharp
-async function enhanceImage(imageUrl) {
-  if (!imageUrl || imageUrl === '') return imageUrl;
-  const cachedUrl = cacheNode.get(imageUrl);
-  if (cachedUrl) {
-    logger.info(`Кэшированное изображение для ${imageUrl}: ${cachedUrl}`);
-    return cachedUrl;
-  }
-  try {
-    logger.info(`Улучшение изображения: ${imageUrl}`);
-    const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-    const imageBuffer = Buffer.from(imageResponse.data);
-    const outputDir = path.join(__dirname, '../images');
-    await fs.mkdir(outputDir, { recursive: true });
-    const outputFilename = `enhanced_${path.basename(imageUrl)}`;
-    const outputPath = path.join(outputDir, outputFilename);
-    await sharp(imageBuffer)
-      .resize({ width: 1000, height: 1500, fit: 'contain', kernel: 'lanczos3', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .sharpen({ sigma: 2.5 })
-      .gamma(2.0)
-      .toFormat('jpeg', { quality: 95 })
-      .toFile(outputPath);
-    const enhancedUrl = `/images/${outputFilename}`;
-    cacheNode.set(imageUrl, enhancedUrl);
-    logger.info(`Улучшенное изображение сохранено: ${enhancedUrl}`);
-    return enhancedUrl;
-  } catch (error) {
-    logger.error(`Ошибка улучшения изображения: ${error.message}`);
-    return imageUrl;
   }
 }
 
