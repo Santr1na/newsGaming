@@ -21,12 +21,64 @@ const options = {
             description: { type: 'string' },
             link: { type: 'string' },
             pubDate: { type: 'string', format: 'date-time' },
-            image: { type: 'string' }
+            image: { type: 'string' },
+            author: { type: 'string' },
+            category: { type: 'string' }
           }
         }
       }
     },
     paths: {
+      '/api/feeds/ign/news': {
+        get: {
+          summary: 'Get IGN News Feed',
+          parameters: [
+            { name: 'q', in: 'query', description: 'Keyword filter', required: false, schema: { type: 'string' } }
+          ],
+          responses: {
+            200: {
+              description: 'Successful response',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: { type: 'array', items: { $ref: '#/components/schemas/FeedItem' } },
+                      message: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/api/feeds/ign/reviews': {
+        get: {
+          summary: 'Get IGN Reviews Feed',
+          parameters: [
+            { name: 'q', in: 'query', description: 'Keyword filter', required: false, schema: { type: 'string' } }
+          ],
+          responses: {
+            200: {
+              description: 'Successful response',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: { type: 'array', items: { $ref: '#/components/schemas/FeedItem' } },
+                      message: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       '/api/feeds/gamespot/news': {
         get: {
           summary: 'Get GameSpot News Feed',
@@ -102,31 +154,6 @@ const options = {
           }
         }
       },
-      '/api/feeds/kotaku': {
-        get: {
-          summary: 'Get Kotaku Feed',
-          parameters: [
-            { name: 'q', in: 'query', description: 'Keyword filter', required: false, schema: { type: 'string' } }
-          ],
-          responses: {
-            200: {
-              description: 'Successful response',
-              content: {
-                'application/json': {
-                  schema: {
-                    type: 'object',
-                    properties: {
-                      success: { type: 'boolean' },
-                      data: { type: 'array', items: { $ref: '#/components/schemas/FeedItem' } },
-                      message: { type: 'string' }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
       '/api/feeds/eurogamer': {
         get: {
           summary: 'Get Eurogamer Feed',
@@ -177,9 +204,84 @@ const options = {
           }
         }
       },
-      '/api/feeds/ign/news': {
+      '/api/feeds/gamerant': {
         get: {
-          summary: 'Get IGN News Feed',
+          summary: 'Get GameRant Feed',
+          parameters: [
+            { name: 'q', in: 'query', description: 'Keyword filter', required: false, schema: { type: 'string' } }
+          ],
+          responses: {
+            200: {
+              description: 'Successful response',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: { type: 'array', items: { $ref: '#/components/schemas/FeedItem' } },
+                      message: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/api/feeds/thegamer': {
+        get: {
+          summary: 'Get TheGamer Feed',
+          parameters: [
+            { name: 'q', in: 'query', description: 'Keyword filter', required: false, schema: { type: 'string' } }
+          ],
+          responses: {
+            200: {
+              description: 'Successful response',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: { type: 'array', items: { $ref: '#/components/schemas/FeedItem' } },
+                      message: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/api/feeds/vgc': {
+        get: {
+          summary: 'Get Video Games Chronicle Feed',
+          parameters: [
+            { name: 'q', in: 'query', description: 'Keyword filter', required: false, schema: { type: 'string' } }
+          ],
+          responses: {
+            200: {
+              description: 'Successful response',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean' },
+                      data: { type: 'array', items: { $ref: '#/components/schemas/FeedItem' } },
+                      message: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/api/feeds/destructoid': {
+        get: {
+          summary: 'Get Destructoid Feed',
           parameters: [
             { name: 'q', in: 'query', description: 'Keyword filter', required: false, schema: { type: 'string' } }
           ],
