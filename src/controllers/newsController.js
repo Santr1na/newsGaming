@@ -13,7 +13,7 @@ const parser = new RSSParser({
 const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 60000;
 const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000;
 const yandexUrl = 'https://translate.api.cloud.yandex.net/translate/v2/translate';
-const yandexApiKey = process.env.YANDEX_API_KEY || 'YOUR_YANDEX_API_KEY';
+const yandexApiKey = process.env.YANDEX_API_KEY || 'AQVNxDoD3ieMR_Fa-Jc-FWEZyo4YzCx-7bRZzDk_';
 const folderId = 'b1gao45322bkr63676l8';
 const cacheNode = new (require('node-cache'))({ stdTTL: 86400 }); // Кэш для переводов
 
