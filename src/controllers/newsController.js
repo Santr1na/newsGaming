@@ -89,19 +89,20 @@ const cache = require('memory-cache');
        }
      };
 
-const feedUrls = [
-  process.env.IGN_NEWS_FEED,
-  process.env.IGN_REVIEWS_FEED,
-  process.env.GAMESPOT_NEWS_FEED,
-  process.env.GAMESPOT_REVIEWS_FEED,
-  process.env.POLYGON_FEED,
-  process.env.EUROGAMER_FEED,
-  process.env.PCGAMER_FEED,
-  process.env.GAMERANT_FEED,
-  process.env.THEGAMER_FEED,
-  process.env.VGC_NEWS_FEED,
-  process.env.DESTRUCTOID_FEED
-].filter(url => url);
+  async fetchNews() {
+    const feedUrls = [
+      process.env.IGN_NEWS_FEED,
+      process.env.IGN_REVIEWS_FEED,
+      process.env.GAMESPOT_NEWS_FEED,
+      process.env.GAMESPOT_REVIEWS_FEED,
+      process.env.POLYGON_FEED,
+      process.env.EUROGAMER_FEED,
+      process.env.PCGAMER_FEED,
+      process.env.GAMERANT_FEED,
+      process.env.THEGAMER_FEED,
+      process.env.VGC_NEWS_FEED,
+      process.env.DESTRUCTOID_FEED
+    ].filter(url => url);
 
        logger.info('Fetching RSS feeds:', { feedUrls });
 
