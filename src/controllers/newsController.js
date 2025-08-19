@@ -100,8 +100,7 @@ const cache = require('memory-cache');
       process.env.PCGAMER_FEED,
       process.env.GAMERANT_FEED,
       process.env.THEGAMER_FEED,
-      process.env.VGC_NEWS_FEED,
-      process.env.DESTRUCTOID_FEED
+      process.env.VGC_NEWS_FEED
     ].filter(url => url);
 
        logger.info('Fetching RSS feeds:', { feedUrls });
