@@ -90,6 +90,12 @@ if (!newsController.getLatestNews) {
  *           enum: [rumors, recommendations, polls, soon, update]
  *         description: Категория новостей
  *       - in: query
+ *         name: date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Точная дата (YYYY-MM-DD) для фильтрации
+ *       - in: query
  *         name: from
  *         schema:
  *           type: string
@@ -150,6 +156,45 @@ router.get('/search', [
   query('q').notEmpty().trim().escape(),
   validate
 ], newsController.searchNews);
+
+/**
+ * @swagger
+ * /api/news/latest-by-date:
+ *   get:
+ *     tags: [News]
+ *     summary: Получить новости по конкретной дате
+ *     description: Возвращает новости за указанную дату
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Дата в формате YYYY-MM-DD
+ *     responses:
+ *       200:
+ *         description: Успешный ответ с новостями
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/NewsItem'
+ *       404:
+ *         description: Новости для этой даты не найдены
+ *       500:
+ *         description: Ошибка сервера
+ */
+router.get('/latest-by-date', [
+  query('date').notEmpty().isISO8601().withMessage('Date must be in ISO format (YYYY-MM-DD)'),
+  validate
+], newsController.getNewsByDate);
 
 /**
  * @swagger
