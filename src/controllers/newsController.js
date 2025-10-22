@@ -70,7 +70,7 @@ class NewsController {
         stack: error.stack,
         query: req.query
       });
-      res.status(500).json({ success: false, message: 'Failed to fetch news' });
+      next(new Error('Failed to fetch news'));
     }
   };
 
@@ -91,7 +91,7 @@ class NewsController {
         stack: error.stack,
         query: req.query
       });
-      res.status(500).json({ success: false, message: 'Failed to search news' });
+      next(new Error('Failed to search news'));
     }
   };
 
@@ -115,11 +115,11 @@ class NewsController {
         stack: error.stack,
         query: req.query
       });
-      res.status(500).json({ success: false, message: 'Failed to fetch news by date' });
+      next(new Error('Failed to fetch news by date'));
     }
   };
 
-  async fetchNews() {
+  fetchNews = async () => {
     const feedUrls = [
       process.env.IGN_NEWS_FEED,
       process.env.IGN_REVIEWS_FEED,
@@ -202,7 +202,7 @@ class NewsController {
     logger.info(`Processed ${newsItems.length} news items, current DB count: ${await News.countDocuments()}`);
     cache.clear();
     return newsItems;
-  }
+  };
 }
 
 module.exports = new NewsController();
