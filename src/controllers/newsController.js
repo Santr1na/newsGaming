@@ -29,11 +29,10 @@ class NewsController {
       const query = {};
       if (category) query.category = category;
       if (date) {
-        // Фильтрация по точной дате (все новости за указанный день)
         const startDate = new Date(date);
-        startDate.setHours(0, 0, 0, 0); // Начало дня
+        startDate.setHours(0, 0, 0, 0);
         const endDate = new Date(date);
-        endDate.setHours(23, 59, 59, 999); // Конец дня
+        endDate.setHours(23, 59, 59, 999);
         query.pubDate = { $gte: startDate, $lte: endDate };
       } else if (from && to) {
         query.pubDate = { $gte: new Date(from), $lte: new Date(to) };
@@ -93,6 +92,30 @@ class NewsController {
         query: req.query
       });
       res.status(500).json({ success: false, message: 'Failed to search news' });
+    }
+  };
+
+  getNewsByDate = async (req, res, next) => {
+    try {
+      const { date } = req.query;
+      const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(date);
+      endDate.setHours(23, 59, 59, 999);
+      const news = await News.find({ pubDate: { $gte: startDate, $lte: endDate } })
+        .sort({ pubDate: -1 })
+        .exec();
+      if (news.length === 0) {
+        return res.status(404).json({ success: false, message: 'No news found for this date' });
+      }
+      res.json({ success: true, data: news });
+    } catch (error) {
+      logger.error('News by date fetch error:', {
+        message: error.message,
+        stack: error.stack,
+        query: req.query
+      });
+      res.status(500).json({ success: false, message: 'Failed to fetch news by date' });
     }
   };
 
