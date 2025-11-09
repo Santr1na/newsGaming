@@ -155,7 +155,7 @@ class NewsController {
     for (const url of feedUrls) {
       try {
         logger.info(`Parsing RSS feed: ${url}`);
-        const feed = await parser.parseURL(url);
+        const feed = await parser.parseURL(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' } });
         if (!feed?.items?.length) {
           logger.warn(`Empty feed: ${url}`);
           continue;
