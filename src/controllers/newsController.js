@@ -7,9 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const parser = new RSSParser({
   customFields: {
-      item: [['media:content', 'mediaContent'], ['media:thumbnail', 'newsThumbnail'], ['dc:creator', 'creator']]
-    },
-    requestOptions: {
+    item: [['media:content', 'mediaContent'], ['media:thumbnail', 'newsThumbnail'], ['dc:creator', 'creator']]
+  },
+  requestOptions: {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
@@ -32,65 +32,44 @@ class NewsController {
       const ip = req.ip;
       const geo = geoip.lookup(ip);
       const euCountries = ['AT','BE','BG','CY','CZ','DE','DK','EE','ES','FI','FR','GR','HR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK'];
-      if (geo && euCountries.includes(geo.country)) {
-        const euNewsPath = path.join(__dirname, '../../data/eu_news.json');
-        const euNews = JSON.parse(fs.readFileSync(euNewsPath, 'utf8'));
-        const { page = 1, limit = 10, category, date, from, to } = req.query;
-        let filteredNews = euNews;
-        if (category) filteredNews = filteredNews.filter(item => item.category === category);
-        if (date) {
-          const startDate = new Date(date);
-          startDate.setHours(0, 0, 0, 0);
-          const endDate = new Date(date);
-          endDate.setHours(23, 59, 59, 999);
-          filteredNews = filteredNews.filter(item => new Date(item.pubDate) >= startDate && new Date(item.pubDate) <= endDate);
-        } else if (from && to) {
-          filteredNews = filteredNews.filter(item => new Date(item.pubDate) >= new Date(from) && new Date(item.pubDate) <= new Date(to));
-        } else if (from) {
-          filteredNews = filteredNews.filter(item => new Date(item.pubDate) >= new Date(from));
-        } else if (to) {
-          filteredNews = filteredNews.filter(item => new Date(item.pubDate) <= new Date(to));
-        }
-        filteredNews.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
-        const paginatedNews = filteredNews.slice((page - 1) * limit, page * limit);
-        const total = filteredNews.length;
-        return res.json({ success: true, data: paginatedNews, pagination: { current: parseInt(page), total, hasMore: page * limit < total } });
-      } else {
-        const { page = 1, limit = 10, category, date, from, to } = req.query;
-        const query = {};
-        if (category) query.category = category;
-        if (date) {
-          const startDate = new Date(date);
-          startDate.setHours(0, 0, 0, 0);
-          const endDate = new Date(date);
-          endDate.setHours(23, 59, 59, 999);
-          query.pubDate = { $gte: startDate, $lte: endDate };
-        } else if (from && to) {
-          query.pubDate = { $gte: new Date(from), $lte: new Date(to) };
-        } else if (from) {
-          query.pubDate = { $gte: new Date(from) };
-        } else if (to) {
-          query.pubDate = { $lte: new Date(to) };
-        }
-        logger.info('Query params:', { page, limit, category, date, from, to });
-        const cacheKey = `news_${page}_${limit}_${category || 'all'}_${date || 'no-date'}_${from || 'no-from'}_${to || 'no-to'}`;
-        const cachedNews = cache.get(cacheKey);
-        if (cachedNews) {
-          logger.info(`Cache hit: ${cacheKey}`);
-          return res.json(cachedNews);
-        }
-        const newsFromDB = await News.find(query)
-          .sort({ pubDate: -1 })
-          .skip((page - 1) * limit)
-          .limit(parseInt(limit))
-          .exec();
-        const total = await News.countDocuments(query);
-        logger.info('DB query result:', { count: newsFromDB.length, total });
-        const response = { success: true, data: newsFromDB, pagination: { current: parseInt(page), total, hasMore: page * limit < total } };
-        cache.put(cacheKey, response, CACHE_DURATION);
-        logger.info(`DB hit: ${newsFromDB.length} items`);
-        return res.json(response);
+      const isEU = geo && euCountries.includes(geo.country);
+      const { page = 1, limit = 10, category, date, from, to } = req.query;
+      let query = {};
+      if (category) query.category = category;
+      if (date) {
+        const startDate = new Date(date);
+        startDate.setHours(0, 0, 0, 0);
+        const endDate = new Date(date);
+        endDate.setHours(23, 59, 59, 999);
+        query.pubDate = { $gte: startDate, $lte: endDate };
+      } else if (from && to) {
+        query.pubDate = { $gte: new Date(from), $lte: new Date(to) };
+      } else if (from) {
+        query.pubDate = { $gte: new Date(from) };
+      } else if (to) {
+        query.pubDate = { $lte: new Date(to) };
       }
+      if (!isEU) {
+        query.source = { $nin: ['polygon', 'gamerant', 'thegamer'] };
+      }
+      logger.info('Query params:', { page, limit, category, date, from, to });
+      const cacheKey = `news_${page}_${limit}_${category || 'all'}_${date || 'no-date'}_${from || 'no-from'}_${to || 'no-to'}_${isEU ? 'eu' : 'us'}`;
+      const cachedNews = cache.get(cacheKey);
+      if (cachedNews) {
+        logger.info(`Cache hit: ${cacheKey}`);
+        return res.json(cachedNews);
+      }
+      const newsFromDB = await News.find(query)
+        .sort({ pubDate: -1 })
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit))
+        .exec();
+      const total = await News.countDocuments(query);
+      logger.info('DB query result:', { count: newsFromDB.length, total });
+      const response = { success: true, data: newsFromDB, pagination: { current: parseInt(page), total, hasMore: page * limit < total } };
+      cache.put(cacheKey, response, CACHE_DURATION);
+      logger.info(`DB hit: ${newsFromDB.length} items`);
+      return res.json(response);
     } catch (error) {
       logger.error('News fetch error:', {
         message: error.message,
@@ -157,6 +136,16 @@ class NewsController {
     ].filter(url => url);
     logger.info('Fetching RSS feeds:', { feedUrls });
     const newsItems = [];
+    const getSource = (url) => {
+      if (url.includes('ign')) return 'ign';
+      if (url.includes('gamespot')) return 'gamespot';
+      if (url.includes('polygon')) return 'polygon';
+      if (url.includes('eurogamer')) return 'eurogamer';
+      if (url.includes('pcgamer')) return 'pcgamer';
+      if (url.includes('gamerant')) return 'gamerant';
+      if (url.includes('thegamer')) return 'thegamer';
+      return 'unknown';
+    };
     for (const url of feedUrls) {
       try {
         logger.info(`Parsing RSS feed: ${url}`);
@@ -183,7 +172,8 @@ class NewsController {
                 (item.newsThumbnail ? (Array.isArray(item.newsThumbnail) ? item.newsThumbnail[0]?.$?.url : item.newsThumbnail.$?.url) : null) ||
                 'https://via.placeholder.com/150',
               author: item.creator || item.author || 'Unknown',
-              category: this.categorizeNews(item)
+              category: this.categorizeNews(item),
+              source: getSource(url)
             };
           });
         newsItems.push(...items);
