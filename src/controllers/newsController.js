@@ -13,8 +13,8 @@ const parser = new RSSParser({
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
   }
 });
-const CACHE_DURATION = process.env.CACHE_DURATION_MS || 60000;
-const MAX_NEWS_LIMIT = process.env.MAX_NEWS_LIMIT || 1000;
+const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 60000;
+const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000;
 class NewsController {
   categorizeNews(item) {
     const title = (item.title || '').toLowerCase();
