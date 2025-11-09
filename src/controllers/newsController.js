@@ -134,7 +134,17 @@ class NewsController {
     const { link } = req.query;
     if (!link) return res.status(400).json({ error: 'Link required' });
     try {
-      const { data: html } = await axios.get(link, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' } });
+      const { data: html } = await axios.get(link, { 
+        headers: { 
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1'
+        },
+        timeout: 30000 
+      });
       const $ = cheerio.load(html);
       $('aside').remove();
       let selector = link.includes('ign.com') ? '.article-content p:not(.advertisement), .article-content h2, .article-content h3, .article-content table, .article-content ol, .article-content ul' :
@@ -172,6 +182,7 @@ class NewsController {
       if (!contentParts.length) contentParts.push({ type: 'text', content: 'Content missing.' });
       res.json({ content: contentParts });
     } catch (error) {
+      logger.error('Parse error:', { message: error.message, stack: error.stack, link });
       next(error);
     }
   };
