@@ -174,7 +174,7 @@ class NewsController {
           else if (element.is('table,h2,h3,ol,ul,video')) {
             if (currentText) contentParts.push({ type: 'text', content: currentText.trim() });
             currentText = '';
-            contentParts.push({ type: 'html', content: element.outerHtml() });
+            contentParts.push({ type: 'html', content: $(element).clone().wrap('<div></div>').parent().html() });
           }
         }
       });
