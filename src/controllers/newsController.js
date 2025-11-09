@@ -7,7 +7,12 @@ const fs = require('fs');
 const path = require('path');
 const parser = new RSSParser({
   customFields: {
-    item: [['media:content', 'mediaContent'], ['media:thumbnail', 'newsThumbnail'], ['dc:creator', 'creator']]
+      item: [['media:content', 'mediaContent'], ['media:thumbnail', 'newsThumbnail'], ['dc:creator', 'creator']]
+    },
+    requestOptions: {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
   }
 });
 const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 60000;
