@@ -134,8 +134,8 @@ class NewsController {
     const { link } = req.query;
     if (!link) return res.status(400).json({ error: 'Link required' });
     try {
-      const { data: html } = await axios.get(link, { 
-        headers: { 
+      const { data: html } = await axios.get(link, {
+        headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.5',
@@ -143,7 +143,7 @@ class NewsController {
           'Connection': 'keep-alive',
           'Upgrade-Insecure-Requests': '1'
         },
-        timeout: 30000 
+        timeout: 30000
       });
       const $ = cheerio.load(html);
       $('aside').remove();
@@ -156,7 +156,7 @@ class NewsController {
         link.includes('polygon.com') ? '.content-block-regular *' :
         'article p:not(.ad-block, .sponsored, .affiliate, .newsletter-form__wrapper, .newsletter-form__wrapper--inbodyContent, .slice-container, .slice-author-bio, .authorBio-swuqazpYSZeXGJMSzXNqBJ, .slice-container-authorBio, .person-wrapper, .person-nBZd4MkT7sYaFmc8BsVcQ5-fSwi155TTodmvyQm7jW5mmjqEoPoLFik, .slice-container-person, .display-card-main-content-wrapper), article h2, article h3, article table, article ol, article ul, .content p, .content h2, .content h3, .content table, .content ol, .content ul';
       let elements = $(selector);
-      logger.info(Elements found: ${elements.length});
+      logger.info(`Elements found: ${elements.length}`);
       if (!elements.length) {
         selector = 'article p, article h2, article h3, .content p, .content h2, .content h3, .entry-content p, .entry-content h2, .entry-content h3, .post-content p, .post-content h2, .post-content h3, .article-body p, .article-body h2, .article-body h3, article table, .content table, .entry-content table, .post-content table, .article-body table, article ol, .content ol, .entry-content ol, .post-content ol, .article-body ol, article ul, .content ul, .entry-content ul, .post-content ul, .article-body ul';
         elements = $(selector);
