@@ -12,7 +12,7 @@
     "docs": "swagger-jsdoc -d swaggerDef.js -o swagger.json"
   },
   "dependencies": {
-    "axios": "^1.6.2",
+    "axios": "^1.7.7",
     "cors": "^2.8.5",
     "geoip-lite": "^1.4.10",
     "cheerio": "^1.0.0-rc.12",
