@@ -143,7 +143,7 @@ class NewsController {
           'Connection': 'keep-alive',
           'Upgrade-Insecure-Requests': '1'
         },
-        timeout: 30000
+        timeout: 300000
       });
       const $ = cheerio.load(html);
       $('aside').remove();
