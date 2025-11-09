@@ -2,14 +2,7 @@ const express = require('express');
 const { query } = require('express-validator');
 const newsController = require('../controllers/newsController');
 const validate = require('../middleware/validate');
-
 const router = express.Router();
-
-console.log('newsController:', newsController);
-
-if (!newsController.getLatestNews) {
-  throw new Error('newsController.getLatestNews is undefined');
-}
 
 /**
  * @swagger
@@ -20,29 +13,20 @@ if (!newsController.getLatestNews) {
  *       properties:
  *         title:
  *           type: string
- *           description: Заголовок новости
  *         description:
  *           type: string
- *           description: Краткое описание или отрывок статьи
  *         link:
  *           type: string
- *           description: URL полной статьи
  *         pubDate:
  *           type: string
  *           format: date-time
- *           description: Дата публикации
  *         image:
  *           type: string
- *           description: URL изображения статьи
  *         author:
  *           type: string
- *           description: Автор новости
- *           nullable: true
  *         category:
  *           type: string
  *           enum: [rumors, recommendations, polls, soon, update]
- *           description: Категория новости
- *   responses:
  *     PaginatedResponse:
  *       type: object
  *       properties:
@@ -68,54 +52,47 @@ if (!newsController.getLatestNews) {
  * /api/news/latest:
  *   get:
  *     tags: [News]
- *     summary: Получить последние игровые новости
- *     description: Возвращает игровые новости с пагинацией и фильтрацией по категории и дате
+ *     summary: Get latest gaming news
  *     parameters:
  *       - in: query
  *         name: page
  *         schema:
  *           type: integer
  *           default: 1
- *         description: Номер страницы для пагинации
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 10
- *         description: Количество элементов на странице
  *       - in: query
  *         name: category
  *         schema:
  *           type: string
  *           enum: [rumors, recommendations, polls, soon, update]
- *         description: Категория новостей
  *       - in: query
  *         name: date
  *         schema:
  *           type: string
  *           format: date
- *         description: Точная дата (YYYY-MM-DD) для фильтрации
  *       - in: query
  *         name: from
  *         schema:
  *           type: string
  *           format: date-time
- *         description: Начальная дата (ISO, например, 2024-01-01T00:00:00Z)
  *       - in: query
  *         name: to
  *         schema:
  *           type: string
  *           format: date-time
- *         description: Конечная дата (ISO, например, 2025-06-12T23:59:59Z)
  *     responses:
  *       200:
- *         description: Успешный ответ с новостями
+ *         description: Success
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/responses/PaginatedResponse'
+ *               $ref: '#/components/schemas/PaginatedResponse'
  *       500:
- *         description: Ошибка сервера
+ *         description: Server error
  */
 router.get('/latest', newsController.getLatestNews);
 
@@ -124,18 +101,16 @@ router.get('/latest', newsController.getLatestNews);
  * /api/news/search:
  *   get:
  *     tags: [News]
- *     summary: Поиск игровых новостей
- *     description: Поиск новостей по строке запроса
+ *     summary: Search gaming news
  *     parameters:
  *       - in: query
  *         name: q
  *         required: true
  *         schema:
  *           type: string
- *         description: Строка поискового запроса
  *     responses:
  *       200:
- *         description: Результаты поиска
+ *         description: Success
  *         content:
  *           application/json:
  *             schema:
@@ -148,9 +123,9 @@ router.get('/latest', newsController.getLatestNews);
  *                   items:
  *                     $ref: '#/components/schemas/NewsItem'
  *       400:
- *         description: Неверный поисковый запрос
+ *         description: Invalid query
  *       500:
- *         description: Ошибка сервера
+ *         description: Server error
  */
 router.get('/search', [
   query('q').notEmpty().trim().escape(),
@@ -162,8 +137,7 @@ router.get('/search', [
  * /api/news/latest-by-date:
  *   get:
  *     tags: [News]
- *     summary: Получить новости по конкретной дате
- *     description: Возвращает новости за указанную дату
+ *     summary: Get news by date
  *     parameters:
  *       - in: query
  *         name: date
@@ -171,10 +145,9 @@ router.get('/search', [
  *         schema:
  *           type: string
  *           format: date
- *         description: Дата в формате YYYY-MM-DD
  *     responses:
  *       200:
- *         description: Успешный ответ с новостями
+ *         description: Success
  *         content:
  *           application/json:
  *             schema:
@@ -187,9 +160,9 @@ router.get('/search', [
  *                   items:
  *                     $ref: '#/components/schemas/NewsItem'
  *       404:
- *         description: Новости для этой даты не найдены
+ *         description: No news found
  *       500:
- *         description: Ошибка сервера
+ *         description: Server error
  */
 router.get('/latest-by-date', [
   query('date').notEmpty().isISO8601().withMessage('Date must be in ISO format (YYYY-MM-DD)'),
@@ -201,11 +174,10 @@ router.get('/latest-by-date', [
  * /api/news/fetch:
  *   post:
  *     tags: [News]
- *     summary: Manually fetch news from RSS feeds
- *     description: Triggers news fetching and saving to database
+ *     summary: Fetch news from RSS
  *     responses:
  *       200:
- *         description: News fetched successfully
+ *         description: Success
  *         content:
  *           application/json:
  *             schema:
@@ -224,8 +196,47 @@ router.post('/fetch', async (req, res, next) => {
     res.json({ success: true, message: 'News fetched and saved' });
   } catch (error) {
     logger.error('Fetch news error:', { message: error.message, stack: error.stack });
-    next(new ApiError('Failed to fetch news', 500));
+    next(error);
   }
 });
+
+/**
+ * @swagger
+ * /api/news/article:
+ *   get:
+ *     tags: [News]
+ *     summary: Parse article content
+ *     parameters:
+ *       - in: query
+ *         name: link
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Success
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 content:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       type:
+ *                         type: string
+ *                       content:
+ *                         type: string
+ *       400:
+ *         description: Link required
+ *       500:
+ *         description: Server error
+ */
+router.get('/article', [
+  query('link').notEmpty(),
+  validate
+], newsController.parseArticle);
 
 module.exports = router;
