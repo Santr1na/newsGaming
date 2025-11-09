@@ -156,6 +156,7 @@ class NewsController {
         link.includes('polygon.com') ? '.content-block-regular *' :
         'article p:not(.ad-block, .sponsored, .affiliate, .newsletter-form__wrapper, .newsletter-form__wrapper--inbodyContent, .slice-container, .slice-author-bio, .authorBio-swuqazpYSZeXGJMSzXNqBJ, .slice-container-authorBio, .person-wrapper, .person-nBZd4MkT7sYaFmc8BsVcQ5-fSwi155TTodmvyQm7jW5mmjqEoPoLFik, .slice-container-person, .display-card-main-content-wrapper), article h2, article h3, article table, article ol, article ul, .content p, .content h2, .content h3, .content table, .content ol, .content ul';
       let elements = $(selector);
+      logger.info(Elements found: ${elements.length});
       if (!elements.length) {
         selector = 'article p, article h2, article h3, .content p, .content h2, .content h3, .entry-content p, .entry-content h2, .entry-content h3, .post-content p, .post-content h2, .post-content h3, .article-body p, .article-body h2, .article-body h3, article table, .content table, .entry-content table, .post-content table, .article-body table, article ol, .content ol, .entry-content ol, .post-content ol, .article-body ol, article ul, .content ul, .entry-content ul, .post-content ul, .article-body ul';
         elements = $(selector);
