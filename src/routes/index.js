@@ -31,4 +31,9 @@ router.post('/fetch', async (req, res) => {
   }
 });
 
+router.get('/article', [
+query('link').notEmpty(),
+validate
+], newsController.parseArticle);
+
 module.exports = router;
