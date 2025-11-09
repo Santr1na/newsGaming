@@ -2,16 +2,16 @@ const cache = require('memory-cache');
 const RSSParser = require('rss-parser');
 const logger = require('../utils/logger');
 const News = require('../models/news');
-
+const geoip = require('geoip-lite');
+const fs = require('fs');
+const path = require('path');
 const parser = new RSSParser({
   customFields: {
     item: [['media:content', 'mediaContent'], ['media:thumbnail', 'newsThumbnail'], ['dc:creator', 'creator']]
   }
 });
-
 const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 60000;
 const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000;
-
 class NewsController {
   categorizeNews(item) {
     const titleLower = (item.title || '').toLowerCase();
@@ -22,48 +22,70 @@ class NewsController {
     if (titleLower.includes('recommend') || titleLower.includes('рекоменд') || contentLower.includes('recommend')) return 'recommendations';
     return 'update';
   }
-
   getLatestNews = async (req, res, next) => {
     try {
-      const { page = 1, limit = 10, category, date, from, to } = req.query;
-      const query = {};
-      if (category) query.category = category;
-      if (date) {
-        const startDate = new Date(date);
-        startDate.setHours(0, 0, 0, 0);
-        const endDate = new Date(date);
-        endDate.setHours(23, 59, 59, 999);
-        query.pubDate = { $gte: startDate, $lte: endDate };
-      } else if (from && to) {
-        query.pubDate = { $gte: new Date(from), $lte: new Date(to) };
-      } else if (from) {
-        query.pubDate = { $gte: new Date(from) };
-      } else if (to) {
-        query.pubDate = { $lte: new Date(to) };
+      const ip = req.ip;
+      const geo = geoip.lookup(ip);
+      const euCountries = ['AT','BE','BG','CY','CZ','DE','DK','EE','ES','FI','FR','GR','HR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK'];
+      if (geo && euCountries.includes(geo.country)) {
+        const euNewsPath = path.join(__dirname, '../../data/eu_news.json');
+        const euNews = JSON.parse(fs.readFileSync(euNewsPath, 'utf8'));
+        const { page = 1, limit = 10, category, date, from, to } = req.query;
+        let filteredNews = euNews;
+        if (category) filteredNews = filteredNews.filter(item => item.category === category);
+        if (date) {
+          const startDate = new Date(date);
+          startDate.setHours(0, 0, 0, 0);
+          const endDate = new Date(date);
+          endDate.setHours(23, 59, 59, 999);
+          filteredNews = filteredNews.filter(item => new Date(item.pubDate) >= startDate && new Date(item.pubDate) <= endDate);
+        } else if (from && to) {
+          filteredNews = filteredNews.filter(item => new Date(item.pubDate) >= new Date(from) && new Date(item.pubDate) <= new Date(to));
+        } else if (from) {
+          filteredNews = filteredNews.filter(item => new Date(item.pubDate) >= new Date(from));
+        } else if (to) {
+          filteredNews = filteredNews.filter(item => new Date(item.pubDate) <= new Date(to));
+        }
+        filteredNews.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+        const paginatedNews = filteredNews.slice((page - 1) * limit, page * limit);
+        const total = filteredNews.length;
+        return res.json({ success: true, data: paginatedNews, pagination: { current: parseInt(page), total, hasMore: page * limit < total } });
+      } else {
+        const { page = 1, limit = 10, category, date, from, to } = req.query;
+        const query = {};
+        if (category) query.category = category;
+        if (date) {
+          const startDate = new Date(date);
+          startDate.setHours(0, 0, 0, 0);
+          const endDate = new Date(date);
+          endDate.setHours(23, 59, 59, 999);
+          query.pubDate = { $gte: startDate, $lte: endDate };
+        } else if (from && to) {
+          query.pubDate = { $gte: new Date(from), $lte: new Date(to) };
+        } else if (from) {
+          query.pubDate = { $gte: new Date(from) };
+        } else if (to) {
+          query.pubDate = { $lte: new Date(to) };
+        }
+        logger.info('Query params:', { page, limit, category, date, from, to });
+        const cacheKey = `news_${page}_${limit}_${category || 'all'}_${date || 'no-date'}_${from || 'no-from'}_${to || 'no-to'}`;
+        const cachedNews = cache.get(cacheKey);
+        if (cachedNews) {
+          logger.info(`Cache hit: ${cacheKey}`);
+          return res.json(cachedNews);
+        }
+        const newsFromDB = await News.find(query)
+          .sort({ pubDate: -1 })
+          .skip((page - 1) * limit)
+          .limit(parseInt(limit))
+          .exec();
+        const total = await News.countDocuments(query);
+        logger.info('DB query result:', { count: newsFromDB.length, total });
+        const response = { success: true, data: newsFromDB, pagination: { current: parseInt(page), total, hasMore: page * limit < total } };
+        cache.put(cacheKey, response, CACHE_DURATION);
+        logger.info(`DB hit: ${newsFromDB.length} items`);
+        return res.json(response);
       }
-
-      logger.info('Query params:', { page, limit, category, date, from, to });
-
-      const cacheKey = `news_${page}_${limit}_${category || 'all'}_${date || 'no-date'}_${from || 'no-from'}_${to || 'no-to'}`;
-      const cachedNews = cache.get(cacheKey);
-      if (cachedNews) {
-        logger.info(`Cache hit: ${cacheKey}`);
-        return res.json(cachedNews);
-      }
-
-      const newsFromDB = await News.find(query)
-        .sort({ pubDate: -1 })
-        .skip((page - 1) * limit)
-        .limit(parseInt(limit))
-        .exec();
-      const total = await News.countDocuments(query);
-
-      logger.info('DB query result:', { count: newsFromDB.length, total });
-
-      const response = { success: true, data: newsFromDB, pagination: { current: parseInt(page), total, hasMore: page * limit < total } };
-      cache.put(cacheKey, response, CACHE_DURATION);
-      logger.info(`DB hit: ${newsFromDB.length} items`);
-      return res.json(response);
     } catch (error) {
       logger.error('News fetch error:', {
         message: error.message,
@@ -73,7 +95,6 @@ class NewsController {
       next(new Error('Failed to fetch news'));
     }
   };
-
   searchNews = async (req, res, next) => {
     try {
       const { q } = req.query;
@@ -94,7 +115,6 @@ class NewsController {
       next(new Error('Failed to search news'));
     }
   };
-
   getNewsByDate = async (req, res, next) => {
     try {
       const { date } = req.query;
@@ -118,7 +138,6 @@ class NewsController {
       next(new Error('Failed to fetch news by date'));
     }
   };
-
   fetchNews = async () => {
     const feedUrls = [
       process.env.IGN_NEWS_FEED,
@@ -131,9 +150,7 @@ class NewsController {
       process.env.GAMERANT_FEED,
       process.env.THEGAMER_FEED
     ].filter(url => url);
-
     logger.info('Fetching RSS feeds:', { feedUrls });
-
     const newsItems = [];
     for (const url of feedUrls) {
       try {
@@ -170,12 +187,9 @@ class NewsController {
         logger.warn(`RSS feed error (${url}): ${error.message}`);
       }
     }
-
     logger.info(`Total RSS items fetched: ${newsItems.length}`);
-
     const currentCount = await News.countDocuments();
     logger.info(`Current news count in DB: ${currentCount}`);
-
     for (const item of newsItems) {
       try {
         if (currentCount >= MAX_NEWS_LIMIT) {
@@ -185,7 +199,6 @@ class NewsController {
             logger.info(`Deleted oldest news item: ${oldestNews.link}`);
           }
         }
-
         const existingNews = await News.findOne({ link: item.link }).exec();
         if (!existingNews) {
           await News.create(item);
@@ -198,11 +211,9 @@ class NewsController {
         logger.error(`Failed to process item (${item.link}): ${error.message}`);
       }
     }
-
     logger.info(`Processed ${newsItems.length} news items, current DB count: ${await News.countDocuments()}`);
     cache.clear();
     return newsItems;
   };
 }
-
 module.exports = new NewsController();
