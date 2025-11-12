@@ -7,7 +7,10 @@ const geoip = require('geoip-lite');
 const cheerio = require('cheerio');
 const axios = require('axios');
 const cron = require('node-cron');
-const logger = require('./utils/logger'); // Assuming logger is in utils
+const logger = require('./utils/logger');
+const { query } = require('express-validator');
+const validate = require('./middleware/validate');
+
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -18,9 +21,10 @@ mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopol
   .catch(err => logger.error('MongoDB connection error:', err));
 
 const redisClient = redis.createClient({ url: process.env.REDIS_URL });
-redisClient.connect();
+redisClient.connect().catch(err => logger.error('Redis connection error:', err));
 const getAsync = promisify(redisClient.get).bind(redisClient);
 const setAsync = promisify(redisClient.set).bind(redisClient);
+const delAsync = promisify(redisClient.del).bind(redisClient);
 
 const newsSchema = new mongoose.Schema({
   title: String,
@@ -40,7 +44,7 @@ const News = mongoose.model('News', newsSchema);
 
 const parser = new RSSParser({
   customFields: { item: [['media:content', 'mediaContent'], ['media:thumbnail', 'newsThumbnail'], ['dc:creator', 'creator']] },
-  requestOptions: { headers: { 'User-Agent': 'Mozilla/5.0' } }
+  requestOptions: { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' } }
 });
 
 const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 60000;
@@ -242,4 +246,50 @@ class NewsController {
     }
   };
 }
+
 const newsController = new NewsController();
+
+// Routes
+app.get('/api/news/latest', newsController.getLatestNews);
+app.get('/api/news/search', [
+  query('q').notEmpty().trim().escape(),
+  validate
+], newsController.searchNews);
+app.get('/api/news/latest-by-date', [
+  query('date').notEmpty().isISO8601().withMessage('Date must be in ISO format (YYYY-MM-DD)'),
+  validate
+], newsController.getNewsByDate);
+app.post('/api/news/fetch', async (req, res, next) => {
+  try {
+    await newsController.fetchNews();
+    res.json({ success: true, message: 'News fetched and saved' });
+  } catch (error) {
+    logger.error('Fetch news error:', { message: error.message, stack: error.stack });
+    next(error);
+  }
+});
+app.get('/api/news/article', [
+  query('link').notEmpty(),
+  validate
+], newsController.parseArticle);
+
+// Cron for scheduled fetch
+cron.schedule('*/10 * * * *', async () => {
+  try {
+    logger.info('Running scheduled news fetch...');
+    await newsController.fetchNews();
+    logger.info('Scheduled news fetch completed');
+  } catch (error) {
+    logger.error('Scheduled fetch error:', error);
+  }
+});
+
+app.listen(port, async () => {
+  logger.info(`Server running on port ${port}`);
+  try {
+    await newsController.fetchNews();
+    logger.info('Initial news fetch completed');
+  } catch (error) {
+    logger.error('Initial fetch error:', error);
+  }
+});
