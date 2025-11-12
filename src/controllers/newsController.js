@@ -1,20 +1,49 @@
-const cache = require('memory-cache');
+const express = require('express');
+const mongoose = require('mongoose');
+const redis = require('redis');
+const { promisify } = require('util');
 const RSSParser = require('rss-parser');
-const logger = require('../utils/logger');
-const News = require('../models/news');
 const geoip = require('geoip-lite');
 const cheerio = require('cheerio');
 const axios = require('axios');
+const cron = require('node-cron');
+const logger = require('./utils/logger');
+const app = express();
+const port = process.env.PORT || 3000;
+
+mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => logger.info('MongoDB connected'))
+  .catch(err => logger.error('MongoDB connection error:', err));
+
+const redisClient = redis.createClient({ url: process.env.REDIS_URL });
+redisClient.connect();
+const getAsync = promisify(redisClient.get).bind(redisClient);
+const setAsync = promisify(redisClient.set).bind(redisClient);
+
+const newsSchema = new mongoose.Schema({
+  title: String,
+  description: String,
+  link: String,
+  pubDate: Date,
+  image: String,
+  author: String,
+  category: String,
+  source: String
+}, { timestamps: true });
+newsSchema.index({ pubDate: -1 });
+newsSchema.index({ category: 1 });
+newsSchema.index({ source: 1 });
+newsSchema.index({ link: 1 }, { unique: true });
+const News = mongoose.model('News', newsSchema);
+
 const parser = new RSSParser({
-  customFields: {
-    item: [['media:content', 'mediaContent'], ['media:thumbnail', 'newsThumbnail'], ['dc:creator', 'creator']]
-  },
-  requestOptions: {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
-  }
+  customFields: { item: [['media:content', 'mediaContent'], ['media:thumbnail', 'newsThumbnail'], ['dc:creator', 'creator']] },
+  requestOptions: { headers: { 'User-Agent': 'Mozilla/5.0' } }
 });
+
 const CACHE_DURATION = parseInt(process.env.CACHE_DURATION_MS) || 60000;
 const MAX_NEWS_LIMIT = parseInt(process.env.MAX_NEWS_LIMIT) || 1000;
+
 class NewsController {
   categorizeNews(item) {
     const title = (item.title || '').toLowerCase();
@@ -39,12 +68,12 @@ class NewsController {
       } else if (from || to) query.pubDate = { ...(from && { $gte: new Date(from) }), ...(to && { $lte: new Date(to) }) };
       if (!isEU) query.source = { $nin: ['polygon', 'gamerant', 'thegamer'] };
       const cacheKey = `news_${page}_${limit}_${category||'all'}_${date||'none'}_${from||'none'}_${to||'none'}_${isEU?'eu':'us'}`;
-      let response = cache.get(cacheKey);
-      if (response) return res.json(response);
+      let response = await getAsync(cacheKey);
+      if (response) return res.json(JSON.parse(response));
       const news = await News.find(query).sort({ pubDate: -1 }).skip((page-1)*limit).limit(+limit).exec();
       const total = await News.countDocuments(query);
       response = { success: true, data: news, pagination: { current: +page, total, hasMore: page*limit < total } };
-      cache.put(cacheKey, response, CACHE_DURATION);
+      await setAsync(cacheKey, JSON.stringify(response), 'EX', CACHE_DURATION / 1000);
       return res.json(response);
     } catch (error) {
       logger.error('News fetch error:', { message: error.message, stack: error.stack, query: req.query });
@@ -54,8 +83,13 @@ class NewsController {
   searchNews = async (req, res, next) => {
     try {
       const { q } = req.query;
+      const cacheKey = `search_${q}`;
+      let response = await getAsync(cacheKey);
+      if (response) return res.json(JSON.parse(response));
       const news = await News.find({ $or: [{ title: { $regex: q, $options: 'i' } }, { description: { $regex: q, $options: 'i' } }] }).exec();
-      res.json({ success: true, data: news });
+      response = { success: true, data: news };
+      await setAsync(cacheKey, JSON.stringify(response), 'EX', CACHE_DURATION / 1000);
+      res.json(response);
     } catch (error) {
       logger.error('Search error:', { message: error.message, stack: error.stack, query: req.query });
       next(new Error('Failed to search news'));
@@ -66,9 +100,14 @@ class NewsController {
       const { date } = req.query;
       const start = new Date(date); start.setHours(0,0,0,0);
       const end = new Date(date); end.setHours(23,59,59,999);
+      const cacheKey = `date_${date}`;
+      let response = await getAsync(cacheKey);
+      if (response) return res.json(JSON.parse(response));
       const news = await News.find({ pubDate: { $gte: start, $lte: end } }).sort({ pubDate: -1 }).exec();
       if (!news.length) return res.status(404).json({ success: false, message: 'No news found' });
-      res.json({ success: true, data: news });
+      response = { success: true, data: news };
+      await setAsync(cacheKey, JSON.stringify(response), 'EX', CACHE_DURATION / 1000);
+      res.json(response);
     } catch (error) {
       logger.error('Date fetch error:', { message: error.message, stack: error.stack, query: req.query });
       next(new Error('Failed to fetch news by date'));
@@ -114,7 +153,9 @@ class NewsController {
             source: getSource(url)
           }));
         newsItems.push(...items);
-      } catch (error) {}
+      } catch (error) {
+        logger.error('RSS fetch error:', { url, message: error.message });
+      }
     }
     let currentCount = await News.countDocuments();
     for (const item of newsItems) {
@@ -127,13 +168,18 @@ class NewsController {
       else await News.updateOne({ link: item.link }, { $set: item });
       currentCount++;
     }
-    cache.clear();
+    redisClient.keys('news_*').then(keys => keys.forEach(key => redisClient.del(key)));
     return newsItems;
   };
   parseArticle = async (req, res, next) => {
     const { link } = req.query;
-    if (!link) return res.status(400).json({ error: 'Link required' });
+    logger.info(`Starting parse for link: ${link}`);
+    if (!link) {
+      logger.warn('Link required');
+      return res.status(400).json({ error: 'Link required' });
+    }
     try {
+      logger.info('Fetching HTML');
       const { data: html } = await axios.get(link, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -145,6 +191,7 @@ class NewsController {
         },
         timeout: 30000
       });
+      logger.info('HTML fetched');
       const $ = cheerio.load(html);
       $('aside').remove();
       let selector = link.includes('ign.com') ? '.article-content p:not(.advertisement), .article-content h2, .article-content h3, .article-content table, .article-content ol, .article-content ul' :
@@ -155,16 +202,20 @@ class NewsController {
         link.includes('eurogamer.net') ? '.article_body *:not(figure, aside)' :
         link.includes('polygon.com') ? '.content-block-regular *' :
         'article p:not(.ad-block, .sponsored, .affiliate, .newsletter-form__wrapper, .newsletter-form__wrapper--inbodyContent, .slice-container, .slice-author-bio, .authorBio-swuqazpYSZeXGJMSzXNqBJ, .slice-container-authorBio, .person-wrapper, .person-nBZd4MkT7sYaFmc8BsVcQ5-fSwi155TTodmvyQm7jW5mmjqEoPoLFik, .slice-container-person, .display-card-main-content-wrapper), article h2, article h3, article table, article ol, article ul, .content p, .content h2, .content h3, .content table, .content ol, .content ul';
+      logger.info(`Using selector: ${selector}`);
       let elements = $(selector);
       logger.info(`Elements found: ${elements.length}`);
       if (!elements.length) {
+        logger.info('Switching to fallback selector');
         selector = 'article p, article h2, article h3, .content p, .content h2, .content h3, .entry-content p, .entry-content h2, .entry-content h3, .post-content p, .post-content h2, .post-content h3, .article-body p, .article-body h2, .article-body h3, article table, .content table, .entry-content table, .post-content table, .article-body table, article ol, .content ol, .entry-content ol, .post-content ol, .article-body ol, article ul, .content ul, .entry-content ul, .post-content ul, .article-body ul';
         elements = $(selector);
+        logger.info(`Fallback elements found: ${elements.length}`);
       }
       const ignoreClasses = ['ad-block', 'sponsored', 'affiliate', 'newsletter-form__wrapper', 'newsletter-form__wrapper--inbodyContent', 'slice-container', 'slice-author-bio', 'authorBio-swuqazpYSZeXGJMSzXNqBJ', 'slice-container-authorBio', 'person-wrapper', 'person-nBZd4MkT7sYaFmc8BsVcQ5-fSwi155TTodmvyQm7jW5mmjqEoPoLFik', 'slice-container-person', 'display-card-main-content-wrapper'];
       const ignoreTexts = ['The biggest gaming news, reviews and hardware deals', 'Keep up to date with the most important stories and the best deals, as picked by the PC Gamer team', 'Please enable JavaScript to see our live coverage of this event.', 'You must confirm your public display name before commenting', 'Please logout and then login again, you will then be prompted to enter your display name.'];
       const contentParts = [];
       let currentText = '';
+      logger.info('Processing elements');
       elements.each((i, el) => {
         const element = $(el);
         const text = element.text().trim();
@@ -181,6 +232,7 @@ class NewsController {
       });
       if (currentText) contentParts.push({ type: 'text', content: currentText.trim() });
       if (!contentParts.length) contentParts.push({ type: 'text', content: 'Content missing.' });
+      logger.info(`Content parts generated: ${contentParts.length}`);
       res.json({ content: contentParts });
     } catch (error) {
       logger.error('Parse error:', { message: error.message, stack: error.stack, link });
